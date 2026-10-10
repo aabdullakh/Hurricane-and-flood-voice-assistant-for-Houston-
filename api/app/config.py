@@ -40,6 +40,10 @@ class Settings:
     enable_backboard: bool
     backboard_api_key: str
     data_dir: Path
+    enable_docs: bool  # /docs, /redoc, /openapi.json. Off in production.
+    enable_admin: bool  # /admin/* (live/replay switch). Off in production.
+    auth_fail_limit: int  # bad API keys from one IP within the window before it gets 429
+    auth_fail_window_seconds: int
 
 
 def load_settings() -> Settings:
@@ -66,6 +70,11 @@ def load_settings() -> Settings:
         enable_backboard=_bool("ENABLE_BACKBOARD"),
         backboard_api_key=os.getenv("BACKBOARD_API_KEY", ""),
         data_dir=data_dir,
+        # Secure by default: docs and admin stay off unless explicitly enabled (local dev sets them to 1).
+        enable_docs=_bool("ENABLE_DOCS"),
+        enable_admin=_bool("ENABLE_ADMIN"),
+        auth_fail_limit=int(os.getenv("AUTH_FAIL_LIMIT", "10")),
+        auth_fail_window_seconds=int(os.getenv("AUTH_FAIL_WINDOW_SECONDS", "300")),
     )
 
 

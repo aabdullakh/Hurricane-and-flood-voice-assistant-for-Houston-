@@ -1,5 +1,7 @@
-# Run on a Vultr VM:  docker compose up -d --build
-# Requires a .env file (copy .env.example) and DOMAIN pointing at the VM's IP for automatic HTTPS.
+# Run on the server:  sudo docker compose up -d --build   (see docs/DEPLOY.md)
+# Requires a .env file (chmod 600) with DOMAIN pointing at this server's IP for automatic HTTPS.
+# Only Caddy publishes ports. Docker opens published ports itself (UFW can't block them), so the API and
+# database publish none: they're reachable only from Caddy on the internal Docker network.
 services:
   db:
     image: postgres:16-alpine
@@ -10,6 +12,8 @@ services:
       POSTGRES_DB: orion
     volumes:
       - pgdata:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U orion -d orion"]
       interval: 5s
@@ -27,8 +31,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:8000:8000" # localhost only, for debugging. The public entrance is Caddy.
+    # No "ports:" on purpose. Runs as the non-root "app" user (see api/Dockerfile).
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   caddy:
     image: caddy:2
@@ -42,6 +58,15 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - api
 

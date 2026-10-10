@@ -1,6 +1,30 @@
 # Caddy gets a free HTTPS certificate automatically for {$DOMAIN} (ports 80 and 443 must be open, and the
-# domain's A record must point at this server). ElevenLabs only calls HTTPS endpoints.
+# domain must point at this server). It also redirects http:// to https://. ElevenLabs only calls HTTPS endpoints.
+{
+	servers {
+		# HTTP/1.1 and HTTP/2 over TCP only. HTTP/3 would need UDP 443, which the firewall keeps closed.
+		protocols h1 h2
+	}
+}
+
 {$DOMAIN} {
-	encode gzip
+	# Largest legitimate body is a /post-call transcript (20,000 characters). Anything bigger gets 413.
+	request_body {
+		max_size 256KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# Dashboard: inline script/style, Leaflet from unpkg.com, map tiles from OpenStreetMap.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+		-Server
+	}
+
+	encode zstd gzip
+	# Caddy replaces X-Forwarded-For with the real client IP, so the API's bad-key limit can't be dodged by spoofing it.
 	reverse_proxy api:8000
 }

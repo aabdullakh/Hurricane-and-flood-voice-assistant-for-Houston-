@@ -40,7 +40,8 @@ async def lifespan(app: FastAPI):
                 task.cancel()
 
 
-app = FastAPI(title="Houston Flood Voice Assistant API", version="0.1.0", lifespan=lifespan)
+_docs = {} if settings.enable_docs else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+app = FastAPI(title="Houston Flood Voice Assistant API", version="0.1.0", lifespan=lifespan, **_docs)
 
 
 def get_client(request: Request) -> httpx.AsyncClient:
@@ -48,6 +49,15 @@ def get_client(request: Request) -> httpx.AsyncClient:
 
 
 Auth = Depends(require_key)
+
+
+def require_admin_enabled() -> None:
+    """Admin endpoints look like they don't exist unless ENABLE_ADMIN=1."""
+    if not settings.enable_admin:
+        raise HTTPException(404, "Not Found")
+
+
+Admin = Depends(require_admin_enabled)
 Short = Annotated[str, StringConstraints(max_length=100)]
 
 
@@ -212,12 +222,12 @@ class ModeIn(BaseModel):
     index: int = 0
 
 
-@app.get("/admin/mode", dependencies=[Auth])
+@app.get("/admin/mode", dependencies=[Admin, Auth])
 def get_mode():
     return {"mode": STATE.mode, "replay": STATE.replay_name, "index": STATE.replay_index, "available_replays": replay.list_replays()}
 
 
-@app.post("/admin/mode", dependencies=[Auth])
+@app.post("/admin/mode", dependencies=[Admin, Auth])
 def set_mode(body: ModeIn):
     if body.mode == "replay":
         name = body.replay or (replay.list_replays() or [None])[0]
@@ -234,7 +244,7 @@ def set_mode(body: ModeIn):
     return get_mode()
 
 
-@app.post("/admin/replay/step", dependencies=[Auth])
+@app.post("/admin/replay/step", dependencies=[Admin, Auth])
 def step_replay(delta: int = 1):
     if STATE.mode != "replay" or not STATE.replay_name:
         raise HTTPException(400, "not in replay mode")

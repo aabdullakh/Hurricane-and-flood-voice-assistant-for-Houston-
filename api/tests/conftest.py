@@ -11,6 +11,7 @@ os.environ.update(
     NWS_USER_AGENT="(tests, tests@example.com)",
     GEMINI_API_KEY="",
     ENABLE_BACKBOARD="0",
+    ENABLE_ADMIN="1",  # replay tests use /admin; production leaves it off
 )
 
 import pytest  # noqa: E402
@@ -18,6 +19,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import delete  # noqa: E402
 
 from app.db import CallSummary, GaugeReading, Profile, SessionLocal, init_db  # noqa: E402
+from app import security  # noqa: E402
 from app.main import app  # noqa: E402
 from app.sources import nws  # noqa: E402
 from app.state import STATE  # noqa: E402
@@ -34,5 +36,6 @@ def client():
         s.commit()
     STATE.mode, STATE.replay_name, STATE.replay_index = "live", None, 0
     nws.clear_cache()
+    security._failures.clear()
     with TestClient(app) as c:
         yield c

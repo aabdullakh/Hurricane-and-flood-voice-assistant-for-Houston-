@@ -7,3 +7,9 @@
 .venv
 data/*.db
 api/tests
+.git-backups
+.idea
+.vscode
+.DS_Store
+**/*.db
+docs
