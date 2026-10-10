@@ -128,9 +128,32 @@ def test_bad_coordinates_rejected(client):
 
 
 # ---------- shelters ----------
-def test_shelters_empty_list_tells_agent_what_to_say(client):
-    r = client.get("/shelters?lat=29.76&lon=-95.37", headers=HEADERS).json()
-    assert r["count"] == 0 and "211" in r["message"] and r["sample_data"] is True
+
+def test_shelters_empty_list_tells_agent_what_to_say(
+    client, monkeypatch
+):
+    async def no_shelters(*args, **kwargs):
+        return []
+
+    # Mock FEMA so the test doesn't depend on live data.
+    monkeypatch.setattr(
+        "app.main.get_open_shelters",
+        no_shelters
+    )
+
+    response = client.get(
+        "/shelters?lat=29.76&lon=-95.37",
+        headers=HEADERS
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["count"] == 0
+    assert data["shelters"] == []
+    assert data["sample_data"] is False
+    assert "211" in data["message"]
 
 
 # ---------- profiles: consent, hashing, forget ----------
