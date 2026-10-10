@@ -20,7 +20,10 @@ from .db import CallSummary, Profile, get_session, init_db, to_db, utcnow
 from .poller import poll_loop
 from .security import hash_caller, require_key
 from .state import STATE
-
+from .sources.fema_shelters import (
+    get_open_shelters,
+    resolve_location,
+)
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("api")
 
@@ -106,22 +109,101 @@ async def flood_status(
     return result
 
 
+
 @app.get("/shelters", dependencies=[Auth])
-def shelters(lat: float | None = None, lon: float | None = None, limit: int = Query(3, ge=1, le=10)):
-    path = settings.data_dir / "shelters.json"
-    raw = json.loads(path.read_text()) if path.exists() else {}
-    items = [s for s in raw.get("shelters", []) if s.get("lat") is not None and s.get("lon") is not None]
-    if lat is not None and lon is not None:
-        items = [{**s, "distance_miles": round(d, 1)} for s, d in geo.nearest(items, lat, lon, k=limit)]
-    else:
-        items = items[:limit]
+async def shelters(
+    lat: float | None = Query(None, ge=-90, le=90),
+    lon: float | None = Query(None, ge=-180, le=180),
+    location: str | None = Query(None, max_length=200),
+    limit: int = Query(3, ge=1, le=10),
+    client: httpx.AsyncClient = Depends(get_client),
+):
+    # Convert a city, ZIP code, or address to coordinates.
+    if lat is None or lon is None:
+        if lat is not None or lon is not None:
+            raise HTTPException(
+                400, "Provide both lat and lon"
+            )
+
+        if not location:
+            return {
+                "count": 0,
+                "shelters": [],
+                "message": "Ask the caller for their location.",
+            }
+
+        try:
+            coords = await resolve_location(client, location)
+        except (httpx.HTTPError, ValueError):
+            raise HTTPException(
+                503, "Location lookup is temporarily unavailable"
+            )
+
+        if coords is None:
+            return {
+                "count": 0,
+                "shelters": [],
+                "message": "Location not found. Ask for a city, state, or ZIP code.",
+            }
+
+        lat, lon = coords
+
+    # Retrieve FEMA's reported open shelters.
+    try:
+        records = await get_open_shelters(client, lat, lon)
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(
+            503, "Shelter service is temporarily unavailable"
+        )
+
+    results = []
+
+    for item in records:
+        if str(item.get("shelter_status") or "").strip().upper() != "OPEN":
+            continue
+
+        try:
+            shelter_lat = float(item["latitude"])
+            shelter_lon = float(item["longitude"])
+        except (ValueError, TypeError, KeyError):
+            continue
+
+        distance = geo.haversine_miles(
+            lat, lon, shelter_lat, shelter_lon
+        )
+
+        results.append({
+            "name": item.get("shelter_name"),
+            "address": item.get("address"),
+            "city": item.get("city"),
+            "state": item.get("state"),
+            "zip": item.get("zip"),
+            "status": "OPEN",
+            "distance_miles": round(distance, 1),
+            "lat": shelter_lat,
+            "lon": shelter_lon,
+            "source": "FEMA Open Shelters",
+        })
+
+    results.sort(key=lambda item: item["distance_miles"])
+    results = results[:limit]
+
     return {
-        "sample_data": raw.get("sample_data", True),
-        "note": raw.get("_note"),
-        "count": len(items),
-        "shelters": items,
-        "message": None if items else "No shelter list is loaded. Tell the caller to check official Harris County or City of Houston sources, or call 211.",
+        "count": len(results),
+        "shelters": results,
+        "location": {"lat": lat, "lon": lon},
+        "source": "FEMA Open Shelters",
+        "sample_data": False,
+        "message": (
+            "Shelters are reported open, but call or check "
+            "with local officials to confirm availability."
+            if results else
+            "No open shelters are listed by FEMA within "
+            "50 miles. Check local emergency management, "
+            "Red Cross, or 211 for additional assistance."
+        ),
     }
+
 
 
 class ProfileIn(BaseModel):
