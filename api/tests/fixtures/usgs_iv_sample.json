@@ -1,0 +1,82 @@
+{
+  "value": {
+    "timeSeries": [
+      {
+        "sourceInfo": {
+          "siteName": "Test Bayou at Main St",
+          "siteCode": [
+            {
+              "value": "00000001"
+            }
+          ],
+          "geoLocation": {
+            "geogLocation": {
+              "latitude": 29.76,
+              "longitude": -95.37
+            }
+          }
+        },
+        "variable": {
+          "noDataValue": -999999.0
+        },
+        "values": [
+          {
+            "value": [
+              {
+                "value": "4.00",
+                "qualifiers": [
+                  "P"
+                ],
+                "dateTime": "2026-10-10T09:00:00.000-05:00"
+              },
+              {
+                "value": "4.20",
+                "qualifiers": [
+                  "P"
+                ],
+                "dateTime": "2026-10-10T09:15:00.000-05:00"
+              },
+              {
+                "value": "-999999.00",
+                "qualifiers": [
+                  "P"
+                ],
+                "dateTime": "2026-10-10T09:30:00.000-05:00"
+              },
+              {
+                "value": "5.10",
+                "qualifiers": [
+                  "P"
+                ],
+                "dateTime": "2026-10-10T10:00:00.000-05:00"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "sourceInfo": {
+          "siteName": "No coordinates",
+          "siteCode": [
+            {
+              "value": "00000002"
+            }
+          ]
+        },
+        "variable": {
+          "noDataValue": -999999.0
+        },
+        "values": [
+          {
+            "value": [
+              {
+                "value": "1.0",
+                "dateTime": "2026-10-10T09:00:00.000-05:00"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

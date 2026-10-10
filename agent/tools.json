@@ -1,0 +1,54 @@
+{
+  "_note": "REFERENCE SPEC to copy into the ElevenLabs dashboard (Agent -> Tools -> Add webhook tool). It is NOT an import file; the dashboard's field names may differ. Replace {{DOMAIN}} with your HTTPS domain. Store the API key as a SECRET header value, never in the prompt.",
+  "auth": { "header": "X-API-Key", "value": "<same value as API_SHARED_SECRET in .env>" },
+  "tools": [
+    {
+      "name": "lookup_profile",
+      "description": "Look up what we remember about the person on the phone. Call this at the start of every call.",
+      "method": "POST",
+      "url": "https://{{DOMAIN}}/profile/lookup",
+      "body": { "caller_id": "the caller's phone number [VERIFY: use ElevenLabs' system dynamic variable for caller number, e.g. system__caller_id, in the dashboard]" }
+    },
+    {
+      "name": "get_flood_status",
+      "description": "Get current flood risk, nearest gauge readings and active weather alerts for an address. Use when the caller asks about flooding near them.",
+      "method": "GET",
+      "url": "https://{{DOMAIN}}/flood-status",
+      "query": { "address": "Street address, or nearest cross street / ZIP code, as the caller said it" }
+    },
+    {
+      "name": "get_shelters",
+      "description": "Find nearby shelters or help locations. Call after you know the caller's location.",
+      "method": "GET",
+      "url": "https://{{DOMAIN}}/shelters",
+      "query": { "lat": "latitude from get_flood_status.location.lat", "lon": "longitude from get_flood_status.location.lon", "limit": "2" }
+    },
+    {
+      "name": "save_profile",
+      "description": "Save household details ONLY after the caller says yes to being remembered.",
+      "method": "POST",
+      "url": "https://{{DOMAIN}}/profile",
+      "body": {
+        "caller_id": "the caller's phone number",
+        "consent": "true (only if the caller agreed)",
+        "language": "en or es",
+        "name": "first name",
+        "needs": "list, e.g. [\"oxygen\", \"dog\", \"cannot climb stairs\"]",
+        "notes": "short free text"
+      }
+    },
+    {
+      "name": "forget_profile",
+      "description": "Delete everything we saved about the caller. Use when they ask to be forgotten.",
+      "method": "POST",
+      "url": "https://{{DOMAIN}}/profile/forget",
+      "body": { "caller_id": "the caller's phone number" }
+    }
+  ],
+  "post_call": {
+    "_note": "After each call, send the transcript to POST /post-call (use ElevenLabs' post-call webhook if available [VERIFY], or call it from a small script). Stores only the structured triage result, not the transcript.",
+    "method": "POST",
+    "url": "https://{{DOMAIN}}/post-call",
+    "body": { "transcript": "full transcript text", "language": "en" }
+  }
+}

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Houston Flood Watch Dashboard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#fff; --fg:#17202a; --mut:#5d6b7a; --bd:#d6dde5; --card:#f5f7fa; --warn:#b42318; --warnbg:#fee4e2; --ok:#1f5fbf; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6edf3; --mut:#9aa4b0; --bd:#30363d; --card:#161b22; --warn:#ffb4ab; --warnbg:#4a1511; --ok:#7db1ff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:14px 16px; border-bottom:1px solid var(--bd); display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; }
+  h1 { font-size:1.15rem; margin:0; }
+  .meta { color:var(--mut); font-size:.85rem; }
+  #banner { display:none; padding:10px 16px; background:var(--warnbg); color:var(--warn); font-weight:600; }
+  main { display:grid; grid-template-columns: 1fr 380px; gap:0; min-height:calc(100vh - 110px); }
+  #map { min-height:420px; }
+  aside { padding:12px 16px; border-left:1px solid var(--bd); overflow:auto; }
+  h2 { font-size:.95rem; margin:14px 0 6px; text-transform:uppercase; letter-spacing:.04em; color:var(--mut); }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:8px 10px; margin:6px 0; font-size:.9rem; }
+  .card b { display:block; }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  td, th { text-align:left; padding:4px 6px; border-bottom:1px solid var(--bd); }
+  .legend { font-size:.8rem; color:var(--mut); margin-top:8px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+  footer { padding:10px 16px; color:var(--mut); font-size:.8rem; border-top:1px solid var(--bd); }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } aside { border-left:0; border-top:1px solid var(--bd); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Houston Flood Watch</h1>
+  <span class="meta" id="status">loading…</span>
+</header>
+<div id="banner" role="status"></div>
+<main>
+  <div id="map" aria-label="Map of stream gauges"></div>
+  <aside>
+    <h2>Active alerts</h2>
+    <div id="alerts"><div class="card">None loaded yet.</div></div>
+    <h2>Gauges</h2>
+    <table><thead><tr><th>Gauge</th><th>Level</th><th>Trend</th><th>Age</th></tr></thead><tbody id="rows"></tbody></table>
+    <div class="legend">
+      <span class="dot" style="background:#d92d20"></span>rising fast (≥1.5 ft/hr)
+      <span class="dot" style="background:#f79009"></span>rising (≥0.5 ft/hr)
+      <span class="dot" style="background:#1f5fbf"></span>no fast rise
+      <span class="dot" style="background:#98a2b3"></span>stale (&gt;3 h)
+      <br>Colors show rate of change only. They do not mean an area is safe.
+    </div>
+  </aside>
+</main>
+<footer id="disclaimer"></footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // Everything that comes from the API is inserted with textContent (never innerHTML) so external data cannot inject markup.
+  const map = L.map('map').setView([29.76, -95.37], 10);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+  const layer = L.layerGroup().addTo(map);
+
+  const colorFor = (g) => {
+    if (g.age_minutes > 180) return '#98a2b3';
+    const t = g.trend_ft_per_hr;
+    if (t !== null && t >= 1.5) return '#d92d20';
+    if (t !== null && t >= 0.5) return '#f79009';
+    return '#1f5fbf';
+  };
+  const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+  const fmtAge = (m) => (m < 90 ? m + ' min' : (m / 60).toFixed(1) + ' h');
+  const fmtTrend = (t) => (t === null ? 'n/a' : (t > 0 ? '+' : '') + t.toFixed(1) + ' ft/hr');
+
+  async function refresh() {
+    try {
+      const r = await fetch('/overview', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+
+      const banner = document.getElementById('banner');
+      if (d.replay) {
+        banner.style.display = 'block';
+        banner.textContent = 'REPLAY: ' + (d.replay.synthetic ? 'synthetic test data. ' : 'recorded data. ') + 'Not live conditions. Frame ' + d.replay.frame + '.';
+      } else { banner.style.display = 'none'; }
+
+      document.getElementById('status').textContent =
+        (d.mode === 'replay' ? 'Replay mode' : 'Live') + ' · ' + d.gauges.length + ' gauges · data time ' + new Date(d.now).toLocaleTimeString() +
+        (d.last_poll_error ? ' · last poll error' : '');
+
+      const alerts = document.getElementById('alerts'); alerts.replaceChildren();
+      if (!d.alerts_available) alerts.append(el('div', 'Weather alert service unavailable right now.', 'card'));
+      else if (!d.alerts.length) alerts.append(el('div', 'No active alerts for central Houston.', 'card'));
+      d.alerts.forEach(a => { const c = el('div', undefined, 'card'); c.append(el('b', a.event || 'Alert'), el('span', a.headline || a.area || '')); alerts.append(c); });
+
+      layer.clearLayers();
+      const rows = document.getElementById('rows'); rows.replaceChildren();
+      d.gauges.sort((a, b) => (b.trend_ft_per_hr ?? -99) - (a.trend_ft_per_hr ?? -99)).forEach(g => {
+        L.circleMarker([g.lat, g.lon], { radius: 9, color: colorFor(g), fillColor: colorFor(g), fillOpacity: .7 })
+          .bindTooltip(g.name + ': ' + g.level_ft + ' ft, ' + fmtTrend(g.trend_ft_per_hr) + ', ' + fmtAge(g.age_minutes) + ' old').addTo(layer);
+        const tr = document.createElement('tr');
+        [g.name, g.level_ft + ' ft', fmtTrend(g.trend_ft_per_hr), fmtAge(g.age_minutes)].forEach(t => tr.append(el('td', t)));
+        rows.append(tr);
+      });
+      document.getElementById('disclaimer').textContent = d.disclaimer;
+    } catch (e) {
+      document.getElementById('status').textContent = 'Could not reach the server (' + e.message + '). Retrying…';
+    }
+  }
+  refresh(); setInterval(refresh, 30000);
+</script>
+</body>
+</html>

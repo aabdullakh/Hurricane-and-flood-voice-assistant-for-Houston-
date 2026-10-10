@@ -1,0 +1,20 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# local database
+data/app.db
+data/*.db
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/

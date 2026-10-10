@@ -1,0 +1,9 @@
+fastapi==0.143.0
+uvicorn[standard]==0.53.0
+httpx==0.28.1
+SQLAlchemy==2.1.4
+psycopg[binary]>=3.2
+python-dotenv==1.2.3
+tzdata==2026.5
+# Optional, only if ENABLE_BACKBOARD=1 (see app/memory.py):
+# backboard-sdk

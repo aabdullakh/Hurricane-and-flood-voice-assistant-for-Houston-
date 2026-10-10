@@ -1,0 +1,6 @@
+# Caddy gets a free HTTPS certificate automatically for {$DOMAIN} (ports 80 and 443 must be open, and the
+# domain's A record must point at this server). ElevenLabs only calls HTTPS endpoints.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy api:8000
+}

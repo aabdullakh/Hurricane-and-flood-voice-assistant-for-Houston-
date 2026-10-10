@@ -1,0 +1,16 @@
+{
+  "_note": "EMPTY ON PURPOSE. Add 5-8 real locations copied from OFFICIAL Harris County / City of Houston / Red Cross pages. Keep source_url and as_of for each. Never invent addresses.",
+  "sample_data": true,
+  "_example_entry_schema": {
+    "name": "Official name of the site",
+    "address": "Street address as published",
+    "lat": 29.0,
+    "lon": -95.0,
+    "accepts_pets": null,
+    "accessible": null,
+    "notes": "hours, restrictions",
+    "source_url": "https://official-source.example/page",
+    "as_of": "YYYY-MM-DD"
+  },
+  "shelters": []
+}
