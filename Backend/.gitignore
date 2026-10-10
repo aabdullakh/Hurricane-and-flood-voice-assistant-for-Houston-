@@ -1,0 +1,27 @@
+
+# API keys and secrets
+.env
+.env.*
+!.env.example
+
+# Python environments
+.venv/
+venv/
+
+# Python generated files
+__pycache__/
+*.pyc
+
+# PyCharm files
+.idea/
+
+# Mac files
+.DS_Store
+
+# Node.js (frontend)
+node_modules/
+dist/
+build/
+
+# Logs
+*.log
