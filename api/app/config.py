@@ -31,7 +31,7 @@ class Settings:
     harris_county_fips: str
     houston_lat: float
     houston_lon: float
-    max_gauge_miles: float
+    gauge_max_miles: float  # farther than this, a gauge says nothing about the caller's spot
     rise_elevated_ft_hr: float
     rise_high_ft_hr: float
     stale_minutes: int
@@ -55,7 +55,8 @@ def load_settings() -> Settings:
         harris_county_fips=os.getenv("HARRIS_COUNTY_FIPS", "48201"),
         houston_lat=float(os.getenv("HOUSTON_LAT", "29.7604")),
         houston_lon=float(os.getenv("HOUSTON_LON", "-95.3698")),
-        max_gauge_miles=float(os.getenv("MAX_GAUGE_MILES", "10")),
+        # GAUGE_MAX_MILES; MAX_GAUGE_MILES is the old name, still read so existing .env files keep working.
+        gauge_max_miles=float(os.getenv("GAUGE_MAX_MILES") or os.getenv("MAX_GAUGE_MILES") or "10"),
         # Heuristic thresholds. We do NOT have official flood-stage values per gauge yet.
         rise_elevated_ft_hr=float(os.getenv("RISE_ELEVATED_FT_HR", "0.5")),
         rise_high_ft_hr=float(os.getenv("RISE_HIGH_FT_HR", "1.5")),

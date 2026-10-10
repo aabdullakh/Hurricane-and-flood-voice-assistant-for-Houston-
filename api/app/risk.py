@@ -6,6 +6,7 @@ Rule of thumb used here:
   - an official watch/advisory, or a fast-rising gauge                       => elevated
   - nothing in the data we have                                              => low (with a caveat)
   - not enough data to say anything                                          => unknown
+    (including: nearest gauge farther than GAUGE_MAX_MILES; an official alert still counts)
 """
 from __future__ import annotations
 
@@ -39,7 +40,27 @@ DISCLAIMER = (
 LOW_CAVEAT = "No flood alerts or fast-rising gauges in the data available. This is not a guarantee of safety."
 
 
-def assess(gauge_views: list[dict], alerts: list[dict], alerts_ok: bool = True) -> dict:
+def miles_words(miles: float) -> str:
+    """Distance as a person would say it: 'less than a quarter mile', 'about half a mile', 'about 25 miles'."""
+    if miles < 0.25:
+        return "less than a quarter mile"
+    if miles < 0.75:
+        return "about half a mile"
+    if miles < 1.5:
+        return "about a mile"
+    return f"about {round(miles)} miles"
+
+
+def too_far(nearest_gauge_miles: float | None) -> bool:
+    return nearest_gauge_miles is not None and nearest_gauge_miles > settings.gauge_max_miles
+
+
+def too_far_reason(nearest_gauge_miles: float) -> str:
+    return f"the nearest stream gauge is {miles_words(nearest_gauge_miles)} away, too far to say anything about this spot"
+
+
+def assess(gauge_views: list[dict], alerts: list[dict], alerts_ok: bool = True, nearest_gauge_miles: float | None = None) -> dict:
+    """gauge_views: gauges within GAUGE_MAX_MILES. nearest_gauge_miles: distance to the nearest gauge at all."""
     reasons: list[str] = []
     level = "low"
 
@@ -74,6 +95,8 @@ def assess(gauge_views: list[dict], alerts: list[dict], alerts_ok: bool = True) 
         # Not enough signal to honestly say "low".
         if not alerts_ok:
             return _unknown("weather alert service unavailable", reasons)
+        if too_far(nearest_gauge_miles):
+            return _unknown(too_far_reason(nearest_gauge_miles), reasons)
         if not fresh:
             why = "no nearby gauge data" if not gauge_views else "nearby gauge data is stale"
             return _unknown(why, reasons)

@@ -1,6 +1,8 @@
+import dataclasses
 from datetime import timedelta
 
-from app import geo
+from app import geo, risk, service
+from app.config import settings
 from app.db import Profile, SessionLocal, utcnow
 from app.series import GaugeSeries
 from app.service import store_series
@@ -123,6 +125,32 @@ def test_unresolvable_address_asks_agent_to_reask(client, monkeypatch):
     assert r["found"] is False and "cross street" in r["message"]
 
 
+def test_flood_status_marks_area_lookups_approximate(client, monkeypatch):
+    async def area(*a, **k):
+        return geo.GeoPoint(29.7604, -95.3698, approximate=True)
+
+    monkeypatch.setattr(geo, "geocode", area)
+    r = client.get("/flood-status?address=downtown", headers=HEADERS).json()
+    assert r["found"] is True and r["approximate"] is True
+
+
+def test_flood_status_resolves_a_bayou_name_from_loaded_gauges(client, monkeypatch):
+    async def no_alerts(*a, **k):
+        return []
+
+    cedar = GaugeSeries("08067505", "Cedar Bayou at I-10 nr Mont Belvieu, TX", 29.82151389, -94.9097056)
+    monkeypatch.setattr(service, "current_data", lambda session: ([cedar], None, utcnow(), False, None))
+    monkeypatch.setattr(nws, "alerts_for_point", no_alerts)
+    r = client.get("/flood-status?address=near Cedar Bayou", headers=HEADERS).json()
+    assert r["found"] is True and r["approximate"] is True
+    assert r["location"] == {"lat": 29.82151389, "lon": -94.9097056}
+
+
+def test_flood_status_with_coordinates_is_not_approximate(client):
+    r = client.get("/flood-status?lat=29.76&lon=-95.37", headers=HEADERS).json()
+    assert r["approximate"] is False
+
+
 def test_bad_coordinates_rejected(client):
     assert client.get("/flood-status?lat=999&lon=-95", headers=HEADERS).status_code == 422
 
@@ -170,3 +198,73 @@ def test_post_call_keyword_fallback_without_gemini(client):
 
 def test_post_call_requires_transcript(client):
     assert client.post("/post-call", json={"transcript": ""}, headers=HEADERS).status_code == 422
+
+
+# ---------- distance guard ----------
+GAUGE_LAT, GAUGE_LON = 29.76, -95.37
+MILES_PER_DEG_LAT = 69.09
+
+
+def _seed_flat_gauge_and_quiet_alerts(monkeypatch):
+    async def no_alerts(*a, **k):
+        return []
+
+    monkeypatch.setattr(nws, "alerts_for_point", no_alerts)
+    now = utcnow()
+    flat = GaugeSeries("T-2", "Flat Gauge", GAUGE_LAT, GAUGE_LON, [(now - timedelta(minutes=60), 4.0), (now - timedelta(minutes=1), 4.0)])
+    with SessionLocal() as s:
+        store_series(s, [flat])
+
+
+def _status_miles_north(client, miles):
+    lat = GAUGE_LAT + miles / MILES_PER_DEG_LAT
+    return client.get(f"/flood-status?lat={lat}&lon={GAUGE_LON}", headers=HEADERS).json()
+
+
+def test_point_3_miles_from_a_gauge_is_normal(client, monkeypatch):
+    _seed_flat_gauge_and_quiet_alerts(monkeypatch)
+    r = _status_miles_north(client, 3)
+    assert r["found"] is True and r["risk"] == "low"
+    assert r["nearest_gauge_miles"] == 3.0
+    assert [v["site_id"] for v in r["nearest_gauges"]] == ["T-2"]
+    assert "Flat Gauge, about 3 miles away" in r["speak_hint"]
+
+
+def test_point_25_miles_from_any_gauge_is_unknown(client, monkeypatch):
+    _seed_flat_gauge_and_quiet_alerts(monkeypatch)
+    r = _status_miles_north(client, 25)
+    assert r["found"] is True and r["risk"] == "unknown"
+    assert r["nearest_gauge_miles"] == 25.0
+    assert r["nearest_gauges"] == []
+    assert any("about 25 miles away, too far to say anything about this spot" in x for x in r["reasons"])
+    assert "The nearest stream gauge is about 25 miles away, too far" in r["speak_hint"]
+    assert "risk level: unknown" in r["speak_hint"].lower()
+
+
+def test_point_exactly_at_the_limit_is_normal_and_just_past_it_is_unknown(client, monkeypatch):
+    _seed_flat_gauge_and_quiet_alerts(monkeypatch)
+    lat = GAUGE_LAT + 10 / MILES_PER_DEG_LAT
+    exact = geo.haversine_miles(lat, GAUGE_LON, GAUGE_LAT, GAUGE_LON)  # the precise distance, ~10 miles
+
+    def limit(miles):
+        patched = dataclasses.replace(settings, gauge_max_miles=miles)
+        monkeypatch.setattr(service, "settings", patched)
+        monkeypatch.setattr(risk, "settings", patched)
+
+    limit(exact)
+    at = client.get(f"/flood-status?lat={lat}&lon={GAUGE_LON}", headers=HEADERS).json()
+    assert at["risk"] == "low" and len(at["nearest_gauges"]) == 1
+
+    limit(exact - 0.001)
+    past = client.get(f"/flood-status?lat={lat}&lon={GAUGE_LON}", headers=HEADERS).json()
+    assert past["risk"] == "unknown" and past["nearest_gauges"] == []
+
+
+def test_nearest_gauge_miles_is_null_when_there_are_no_gauges(client, monkeypatch):
+    async def no_alerts(*a, **k):
+        return []
+
+    monkeypatch.setattr(nws, "alerts_for_point", no_alerts)
+    r = client.get("/flood-status?lat=29.76&lon=-95.37", headers=HEADERS).json()
+    assert "nearest_gauge_miles" in r and r["nearest_gauge_miles"] is None
+    assert r["risk"] == "unknown"

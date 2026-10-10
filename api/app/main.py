@@ -80,15 +80,19 @@ async def flood_status(
     if lat is None or lon is None:
         if not address:
             raise HTTPException(400, "provide lat and lon, or an address")
-        pt = await geo.geocode(client, address)
+        gauges = service.current_data(session)[0]  # so callers can say "near Brays Bayou"
+        pt = await geo.geocode(client, address, gauges)
         if pt is None:
             return {
                 "found": False,
                 "message": "I could not locate that address. Ask the caller for a cross street, ZIP code or nearby landmark.",
             }
-        lat, lon = pt
+        lat, lon, approximate = pt
+    else:
+        approximate = False
     result = await service.build_status(session, client, lat, lon)
     result["location"] = {"lat": lat, "lon": lon}
+    result["approximate"] = approximate  # ZIP / neighborhood / landmark: the answer is for the general area
     return result
 
 

@@ -88,9 +88,12 @@ async def build_status(session: Session, client: httpx.AsyncClient, lat: float, 
     series, replay_alerts, now, synthetic, replay_name = current_data(session)
     alerts, alerts_ok = await _alerts(client, lat, lon, replay_alerts)
 
-    near = geo.nearest([s for s in series if s.readings], lat, lon, k=3, max_miles=settings.max_gauge_miles)
+    closest = geo.nearest([s for s in series if s.readings], lat, lon, k=3)
+    nearest_miles = closest[0][1] if closest else None
+    # Gauges beyond the limit say nothing about this spot: leave them out, but report how far the nearest one is.
+    near = [(s, miles) for s, miles in closest if miles <= settings.gauge_max_miles]
     views = [gauge_view(s, now, miles) for s, miles in near]
-    assessment = risk.assess(views, alerts, alerts_ok)
+    assessment = risk.assess(views, alerts, alerts_ok, nearest_miles)
 
     as_of = None
     if views:
@@ -105,26 +108,29 @@ async def build_status(session: Session, client: httpx.AsyncClient, lat: float, 
         "caveat": assessment["caveat"],
         "data_as_of": None if as_of is None else as_of.isoformat(),
         "nearest_gauges": views,
+        "nearest_gauge_miles": None if nearest_miles is None else round(nearest_miles, 1),
         "alerts": [{k: a.get(k) for k in ("event", "severity", "headline", "area", "expires")} for a in alerts[:5]],
         "alerts_available": alerts_ok,
         "sources": ["USGS gauge readings", "National Weather Service alerts"] if replay_name is None else ["Replay data"],
         "disclaimer": risk.DISCLAIMER,
-        "speak_hint": _speak_hint(views, alerts, assessment, replay_name, synthetic),
+        "speak_hint": _speak_hint(views, alerts, assessment, replay_name, synthetic, nearest_miles),
     }
 
 
-def _speak_hint(views, alerts, assessment, replay_name, synthetic) -> str:
+def _speak_hint(views, alerts, assessment, replay_name, synthetic, nearest_miles=None) -> str:
     parts: list[str] = []
     if replay_name:
         parts.append("This is a replay of recorded sample data, not live conditions." + (" The data is synthetic." if synthetic else ""))
     if views:
         g = views[0]
         obs = datetime.fromisoformat(g["observed_at"])
-        sentence = f"As of {fmt_time(obs)}, the nearest gauge, {g['name']}, about {g['distance_miles']} miles away, reads {g['level_ft']} feet"
+        sentence = f"As of {fmt_time(obs)}, the nearest gauge, {g['name']}, {risk.miles_words(g['distance_miles'])} away, reads {g['level_ft']} feet"
         t = g["trend_ft_per_hr"]
         if t is not None and abs(t) >= 0.1:
             sentence += f" and is {'rising' if t > 0 else 'falling'} about {abs(t):.1f} feet per hour"
         parts.append(sentence + ".")
+    elif risk.too_far(nearest_miles):
+        parts.append(risk.too_far_reason(nearest_miles).capitalize() + ".")
     else:
         parts.append("I don't have a recent gauge reading near that location.")
     for a in alerts[:2]:
