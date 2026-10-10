@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+
+  <header class="site-header">
+    <a class="logo" href="/">My Site</a>
+    <nav aria-label="Main navigation">
+      <button id="voiceTab" class="tab" type="button" aria-controls="voicePanel">
+        Voice assistant
+      </button>
+    </nav>
+  </header>
+
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hurricane and Flood Voice Assist</title>
+
+    <!-- Leaflet map styles -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <!-- Your website styles -->
+    <link rel="stylesheet" href="styles.css" />
+
+    <!-- Load Leaflet before your own JavaScript -->
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+      defer
+    ></script>
+    <script src="script.js" defer></script>
+  </head>
+
+  <body>
+
+    <main>
+      <section id="voicePanel" hidden>
+        <h1>Voice assistant</h1>
+        <form id="assistantForm">
+          <label for="prompt">Ask something</label>
+          <input id="prompt" name="prompt" required>
+          <button type="submit">Send</button>
+        </form>
+        <p id="status" aria-live="polite"></p>
+        <p id="answer"></p>
+      </section>
+
+      <section id="map-section">
+        <h2>Map</h2>
+        <div id="map" role="region" aria-label="Map showing a location"></div>
+      </section>
+
+        <section id="conditions">
+            <h2>Conditions at selected point</h2>
+            <p>Click a spot on the map to load its weather and river-flow forecast.</p>
+            <div id="conditions-output" aria-live="polite">
+            Select a point on the map.
+            </div>
+            <p>Weather and river-flow data: Open-Meteo</p>
+            <p>
+            Shelter data ©
+            <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>
+            </p>
+        </section>
+
+
+
+    </main>
+    <style>
+      .site-header {
+        display: flex;
+        align-items: center;
+        gap: 2rem;
+        padding: 1rem 2rem;
+        background: #172033;
+      }
+      .logo, .tab { color: white; }
+      .logo { font-weight: bold; text-decoration: none; }
+      .tab {
+        padding: .6rem 1rem;
+        border: 0;
+        border-radius: .4rem;
+        background: transparent;
+        font: inherit;
+        cursor: pointer;
+      }
+      .tab:hover, .tab:focus-visible { background: #34415b; }
+      #voicePanel { padding: 2rem; }
+    </style>
+    <script>
+      const panel = document.querySelector("#voicePanel");
+      const form = document.querySelector("#assistantForm");
+      const status = document.querySelector("#status");
+      const answer = document.querySelector("#answer");
+
+      document.querySelector("#voiceTab").addEventListener("click", () => {
+        panel.hidden = false; // Stays on this page; no navigation.
+        document.querySelector("#prompt").focus();
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        status.textContent = "Thinking…";
+        answer.textContent = "";
+
+        try {
+          const response = await fetch("/api/voice-assistant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: document.querySelector("#prompt").value
+            })
+          });
+
+          if (!response.ok) throw new Error("Assistant request failed");
+          const data = await response.json();
+
+          answer.textContent = data.reply;
+          status.textContent = "";
+        } catch (error) {
+          status.textContent = "Sorry, the assistant couldn’t respond. Try again.";
+          console.error(error);
+        }
+      });
+    </script>
+
+  </body>
+</html>
