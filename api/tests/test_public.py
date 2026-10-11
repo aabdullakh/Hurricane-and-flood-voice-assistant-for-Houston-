@@ -111,33 +111,33 @@ def test_geocode_is_post_only(client, monkeypatch):
     async def fake(*a, **k):
         called.append(1)
 
-    monkeypatch.setattr(geo, "geocode", fake)
+    monkeypatch.setattr(geo, "locate", fake)
     assert client.get("/public/geocode?q=downtown").status_code in (404, 405)  # falls through to the static site
     assert called == []  # the text never reached the geocoder, so it can't end up in a URL or log
 
 
 def test_geocode_found_inside_houston(client, monkeypatch):
     async def fake(*a, **k):
-        return geo.GeoPoint(29.760724, -95.369483, approximate=False)
+        return geo.Located("found", geo.GeoPoint(29.760724, -95.369483, approximate=False))
 
-    monkeypatch.setattr(geo, "geocode", fake)
+    monkeypatch.setattr(geo, "locate", fake)
     d = client.post("/public/geocode", json={"q": "901 Bagby St"}).json()
     assert d == {"found": True, "lat": 29.7607, "lon": -95.3695, "approximate": False}
 
 
 def test_geocode_outside_houston_is_not_found(client, monkeypatch):
     async def fake(*a, **k):
-        return geo.GeoPoint(40.71, -74.0, approximate=True)
+        return geo.Located("outside_area", geo.GeoPoint(40.71, -74.0, approximate=True))
 
-    monkeypatch.setattr(geo, "geocode", fake)
+    monkeypatch.setattr(geo, "locate", fake)
     assert client.post("/public/geocode", json={"q": "New York"}).json() == {"found": False, "reason": "outside_area"}
 
 
 def test_geocode_nothing_found(client, monkeypatch):
     async def fake(*a, **k):
-        return None
+        return geo.Located("not_found", None)
 
-    monkeypatch.setattr(geo, "geocode", fake)
+    monkeypatch.setattr(geo, "locate", fake)
     assert client.post("/public/geocode", json={"q": "zzqx"}).json() == {"found": False, "reason": "not_found"}
 
 

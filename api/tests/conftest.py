@@ -52,3 +52,28 @@ def no_live_fema(monkeypatch):
         return []
 
     monkeypatch.setattr(fema_shelters, "_query", empty)
+
+
+@pytest.fixture(autouse=True)
+def fast_nominatim(monkeypatch):
+    """No 1-second waits between mocked Nominatim calls (the throttle has its own test), and a fresh place cache."""
+    from app import geo
+
+    monkeypatch.setattr(geo, "NOMINATIM_MIN_INTERVAL", 0)
+    monkeypatch.setattr(geo, "_settlement_cache", {})
+
+
+@pytest.fixture(autouse=True)
+def no_real_network(monkeypatch):
+    """Safety net: a test that reaches a real outside service fails loudly instead of quietly depending on it.
+    Tests talk to fake services through httpx.MockTransport, which is still allowed."""
+    import httpx
+
+    real_send = httpx.AsyncClient.send
+
+    async def guarded(self, request, *a, **k):
+        if not isinstance(self._transport, httpx.MockTransport):
+            raise RuntimeError(f"test tried to reach the real network: {request.url.host}")
+        return await real_send(self, request, *a, **k)
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", guarded)

@@ -69,11 +69,11 @@ def test_fema_down_returns_a_clear_message_not_a_crash(client, monkeypatch):
 def test_location_zip_is_resolved_then_searched(client, monkeypatch):
     calls = _fema(monkeypatch, [GRB])
 
-    async def fake_geocode(client, text, gauges=()):
+    async def fake_locate(client, text, gauges=()):
         assert text == "77002"
-        return geo.GeoPoint(29.7594, -95.3594, approximate=True)
+        return geo.Located("found", geo.GeoPoint(29.7594, -95.3594, approximate=True))
 
-    monkeypatch.setattr(geo, "geocode", fake_geocode)
+    monkeypatch.setattr(geo, "locate", fake_locate)
     d = client.get("/shelters?location=77002", headers=HEADERS).json()
     assert d["count"] == 1 and d["location"] == {"lat": 29.76, "lon": -95.36}
     assert calls == [(29.76, -95.36)]  # FEMA gets the ~1 km rounded point, not the exact one
@@ -83,17 +83,17 @@ def test_bad_location_asks_for_another(client, monkeypatch):
     calls = _fema(monkeypatch, [GRB])
 
     async def nowhere(*a, **k):
-        return None
+        return geo.Located("not_found", None)
 
-    monkeypatch.setattr(geo, "geocode", nowhere)
+    monkeypatch.setattr(geo, "locate", nowhere)
     d = client.get("/shelters?location=zzqx", headers=HEADERS).json()
-    assert d["count"] == 0 and d["found"] is False and "ZIP" in d["message"]
+    assert d["count"] == 0 and d["found"] is False and d["reason"] == "not_found" and "77002" in d["message"]
     assert calls == []  # nothing to search
 
 
 def test_missing_location_and_half_coordinates(client):
     d = client.get("/shelters", headers=HEADERS).json()
-    assert d["count"] == 0 and "location" in d["message"]
+    assert d["count"] == 0 and d["reason"] == "missing_location" and "Katy" in d["message"]
     assert client.get("/shelters?lat=29.76", headers=HEADERS).status_code == 400
     assert client.get("/shelters?lat=29.76&lon=-95.37&limit=4", headers=HEADERS).status_code == 422  # at most 3
 

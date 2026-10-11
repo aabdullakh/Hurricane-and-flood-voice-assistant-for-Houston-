@@ -1,9 +1,11 @@
 """Distance helpers and address geocoding."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import math
 import re
+import time
 from typing import Iterable, NamedTuple
 
 import httpx
@@ -27,7 +29,19 @@ def _cache_key(text: str) -> str:
     """Caches are keyed by a SHA-256 hash, so no searched text (address, place) is kept in memory."""
     return hashlib.sha256(text.encode()).hexdigest()
 # Nominatim viewbox (left, top, right, bottom): Harris County plus a margin for Katy, Sugar Land, The Woodlands.
-HOUSTON_VIEWBOX = "-96.00,30.25,-94.85,29.45"
+# Greater Houston: Harris County plus the nearby cities callers name (Katy, Sugar Land, Pearland, The Woodlands,
+# Conroe, League City, Galveston). Searches are bounded to this box; anything outside is "outside the area".
+HOUSTON_VIEWBOX = "-96.10,30.45,-94.70,29.15"
+_VB_LEFT, _VB_TOP, _VB_RIGHT, _VB_BOTTOM = (float(v) for v in HOUSTON_VIEWBOX.split(","))
+
+
+def in_area(lat: float, lon: float) -> bool:
+    return _VB_BOTTOM <= lat <= _VB_TOP and _VB_LEFT <= lon <= _VB_RIGHT
+
+
+class Located(NamedTuple):
+    status: str  # "found" | "not_found" | "outside_area"
+    point: "GeoPoint | None"  # set for "found" (and for "outside_area", where it is outside the box)
 
 
 class GeoPoint(NamedTuple):
@@ -114,19 +128,76 @@ async def _zippopotam(client: httpx.AsyncClient, zip_code: str) -> tuple[float, 
         return None
 
 
+NOMINATIM_MIN_INTERVAL = 1.0  # seconds between requests, for the whole server (Nominatim usage policy)
+_nominatim_gate: tuple[object, asyncio.Lock] | None = None
+_nominatim_last = 0.0
+
+
+def _gate() -> asyncio.Lock:
+    """One lock per event loop (tests run several loops); requests queue behind it."""
+    global _nominatim_gate
+    loop = asyncio.get_running_loop()
+    if _nominatim_gate is None or _nominatim_gate[0] is not loop:
+        _nominatim_gate = (loop, asyncio.Lock())
+    return _nominatim_gate[1]
+
+
+async def _nominatim_search(client: httpx.AsyncClient, params: dict) -> list[dict] | None:
+    """Raw Nominatim results, or None if it failed. Throttled to 1 request per second across all callers."""
+    global _nominatim_last
+    async with _gate():
+        wait = _nominatim_last + NOMINATIM_MIN_INTERVAL - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _nominatim_last = time.monotonic()
+        try:
+            r = await client.get(
+                NOMINATIM_URL,
+                params={**params, "format": "json"},
+                headers={"User-Agent": settings.nws_user_agent},  # Nominatim policy requires an identifying User-Agent
+                timeout=8,
+            )
+            r.raise_for_status()
+            hits = r.json()
+            return hits if isinstance(hits, list) else None
+        except Exception:
+            return None
+
+
 async def _nominatim(client: httpx.AsyncClient, params: dict) -> tuple[float, float] | None:
+    hits = await _nominatim_search(client, {**params, "limit": 1})
     try:
-        r = await client.get(
-            NOMINATIM_URL,
-            params={**params, "format": "json", "limit": 1},
-            headers={"User-Agent": settings.nws_user_agent},  # Nominatim policy requires an identifying User-Agent
-            timeout=8,
-        )
-        r.raise_for_status()
-        hit = r.json()[0]
-        return float(hit["lat"]), float(hit["lon"])
-    except Exception:
+        return float(hits[0]["lat"]), float(hits[0]["lon"])
+    except (TypeError, IndexError, KeyError, ValueError):
         return None
+
+
+# A town's own entry beats its county or state of the same name ("Galveston" city, not Galveston County).
+_SETTLEMENT_TYPES = {"city", "town", "village", "hamlet", "municipality", "borough", "suburb", "quarter", "neighbourhood"}
+_settlement_cache: dict[str, tuple[float, float] | None] = {}  # hash -> point, or None = not a place we know
+
+
+async def find_settlement(client: httpx.AsyncClient, text: str, bounded: bool = True) -> tuple[float, float] | None:
+    """Center of a city/town/neighborhood by name. bounded=True: only inside Greater Houston; False: anywhere in the US.
+    Cached (successes and confirmed misses) by a hash of the text, never the text itself."""
+    key = _cache_key(("in:" if bounded else "us:") + places.normalize(text))
+    if key in _settlement_cache:
+        return _settlement_cache[key]
+    params = {"q": text.strip(), "featureType": "settlement", "countrycodes": "us", "limit": 5}
+    if bounded:
+        params |= {"viewbox": HOUSTON_VIEWBOX, "bounded": 1}
+    hits = await _nominatim_search(client, params)
+    if hits is None:
+        return None  # Nominatim failed: don't cache, try again next time
+    pick = next((h for h in hits if h.get("addresstype") in _SETTLEMENT_TYPES), hits[0] if hits else None)
+    try:
+        pt = (float(pick["lat"]), float(pick["lon"])) if pick else None
+    except (KeyError, TypeError, ValueError):
+        pt = None
+    if len(_settlement_cache) >= 5_000:
+        _settlement_cache.clear()
+    _settlement_cache[key] = pt
+    return pt
 
 
 async def geocode_zip(client: httpx.AsyncClient, zip_code: str) -> tuple[float, float] | None:
@@ -170,18 +241,35 @@ async def search_place(client: httpx.AsyncClient, text: str) -> tuple[float, flo
     return pt
 
 
-async def geocode(client: httpx.AsyncClient, address: str, gauges: Iterable = ()) -> GeoPoint | None:
-    """ZIP -> built-in place table -> loaded gauge / bayou names -> Census street address -> Nominatim search.
-    Returns None if nothing matched. Never raises, a failed lookup just means 'ask the caller again'."""
-    m = _ZIP_ONLY.match(address)
+async def locate(client: httpx.AsyncClient, text: str, gauges: Iterable = ()) -> Located:
+    """ZIP -> built-in place table -> loaded gauge / bayou names -> Census street address -> Nominatim city/town
+    (Greater Houston only) -> Nominatim landmark (Greater Houston only) -> is it a real place elsewhere?
+    Never raises. Tells "not found" apart from "outside the area" so the caller can be told which."""
+    text = (text or "").strip()
+    if not text:
+        return Located("not_found", None)
+    m = _ZIP_ONLY.match(text)
     if m:
         pt = await geocode_zip(client, m.group(1))
-        return GeoPoint(*pt, approximate=True) if pt else None
-    pt = places.lookup(address) or match_gauge(address, gauges)
+        if pt is None:
+            return Located("not_found", None)
+        return Located("found" if in_area(*pt) else "outside_area", GeoPoint(*pt, approximate=True))
+    pt = places.lookup(text) or match_gauge(text, gauges)
     if pt:
-        return GeoPoint(*pt, approximate=True)
-    pt = await _census(client, address)
+        return Located("found", GeoPoint(*pt, approximate=True))
+    pt = await _census(client, text)
+    if pt:  # Census can find a real address elsewhere when the caller names another city or state
+        return Located("found" if in_area(*pt) else "outside_area", GeoPoint(*pt, approximate=False))
+    pt = await find_settlement(client, text, bounded=True) or await search_place(client, text)
     if pt:
-        return GeoPoint(*pt, approximate=False)
-    pt = await search_place(client, address)
-    return GeoPoint(*pt, approximate=True) if pt else None
+        return Located("found", GeoPoint(*pt, approximate=True))
+    pt = await find_settlement(client, text, bounded=False)
+    if pt and not in_area(*pt):
+        return Located("outside_area", GeoPoint(*pt, approximate=True))
+    return Located("not_found", None)
+
+
+async def geocode(client: httpx.AsyncClient, address: str, gauges: Iterable = ()) -> GeoPoint | None:
+    """The point, only if it's inside Greater Houston; None otherwise (see locate() for why)."""
+    res = await locate(client, address, gauges)
+    return res.point if res.status == "found" else None

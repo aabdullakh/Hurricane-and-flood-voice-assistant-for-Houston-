@@ -1,6 +1,6 @@
 # Deploying and running the backend
 
-Server: Vultr, Ubuntu 24.04, `45.76.57.234`, served at **https://thefloodfather.surf** (the name comes from `DOMAIN` in the server's `.env`; see `docs/DOMAIN_CUTOVER.md`).
+Server: Vultr, Ubuntu 24.04, `45.76.57.234`, served at **https://thefloodfather.surf** (and, during the cutover, https://45-76-57-234.sslip.io). The site names are in the Caddyfile's site address; see `docs/DOMAIN_CUTOVER.md`.
 App directory on the server: `/home/deploy/app` (owned by `deploy`). No secrets in this file; they live only in the server's `/home/deploy/app/.env` (chmod 600).
 
 ## How it's set up

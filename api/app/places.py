@@ -9,6 +9,20 @@ import re
 
 # (lat, lon), aliases
 _RAW: list[tuple[tuple[float, float], list[str]]] = [
+    # Cities and towns callers name most. Centers from OpenStreetMap (Nominatim), Oct 2026. Others are looked up live.
+    ((29.7589, -95.3677), ["houston", "city of houston"]),
+    ((29.5640, -95.2864), ["pearland"]),
+    ((29.5075, -95.0949), ["league city"]),
+    ((29.5294, -95.2010), ["friendswood"]),
+    ((29.6186, -95.5377), ["missouri city"]),
+    ((29.9988, -95.2622), ["humble"]),
+    ((30.0796, -95.4188), ["spring"]),
+    ((30.0972, -95.6161), ["tomball"]),
+    ((30.3119, -95.4561), ["conroe"]),
+    ((29.4608, -95.0513), ["dickinson"]),
+    ((29.3960, -94.9175), ["texas city"]),
+    ((29.3057, -94.7933), ["galveston"]),
+    # Neighborhoods and landmarks
     ((29.7604, -95.3698), ["downtown"]),
     ((29.7420, -95.3777), ["midtown"]),
     ((29.7450, -95.3910), ["montrose"]),

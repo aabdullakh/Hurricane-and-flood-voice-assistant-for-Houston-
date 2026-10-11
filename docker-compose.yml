@@ -1,5 +1,5 @@
 # Run on the server:  sudo docker compose up -d --build   (see docs/DEPLOY.md)
-# Requires a .env file (chmod 600) with DOMAIN pointing at this server's IP for automatic HTTPS.
+# Requires a .env file (chmod 600). The site names (and so the HTTPS certificates) are in the Caddyfile.
 # Only Caddy publishes ports. Docker opens published ports itself (UFW can't block them), so the API and
 # database publish none: they're reachable only from Caddy on the internal Docker network.
 services:
@@ -57,8 +57,6 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
-    environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
     ports:
       - "80:80"
       - "443:443"

@@ -82,27 +82,53 @@ async def overview(session: Session = Depends(get_session), client: httpx.AsyncC
 
 
 # ---------------------------------------------------------------- tools the agent calls
+LOCATION_EXAMPLES = ["a ZIP like 77002", "a cross street like Main St and Texas Ave", "a city like Katy"]
+AREA_NAME = "Greater Houston: Harris County and nearby cities like Katy, Sugar Land, Pearland, The Woodlands and Galveston"
+
+
+def location_problem(reason: str, query: str | None = None) -> dict:
+    """What went wrong with the caller's location, in words the agent can say, plus what works instead."""
+    q = (query or "").strip()
+    if reason == "outside_area":
+        msg = (f"“{q}” is" if q else "That place is") + f" outside the area this service covers ({AREA_NAME}). " \
+              "Tell the caller this line only has flood data for that area; for other places, check weather.gov or call 211."
+    elif reason == "missing_location":
+        msg = "Ask the caller where they are: a ZIP like 77002, a cross street like Main St and Texas Ave, or a city like Katy."
+    else:
+        msg = (f"I couldn't find “{q}” in the Houston area." if q else "I couldn't find that place.") + \
+              " Ask for a ZIP like 77002, a cross street like Main St and Texas Ave, or a city like Katy."
+    return {"found": False, "reason": reason, "query": q or None, "message": msg, "examples": LOCATION_EXAMPLES}
+
+
+async def resolve_point(client, session, lat, lon, text) -> tuple[geo.GeoPoint | None, dict | None]:
+    """lat/lon or free text -> (point, None), or (None, structured problem). 400 only for half a coordinate pair."""
+    if (lat is None) != (lon is None):
+        raise HTTPException(400, "provide both lat and lon, or a location")
+    if lat is not None:
+        if not geo.in_area(lat, lon):
+            return None, location_problem("outside_area")
+        return geo.GeoPoint(lat, lon, approximate=False), None
+    if not text or not text.strip():
+        return None, location_problem("missing_location")
+    res = await geo.locate(client, text, service.current_data(session)[0])  # Houston-aware; the text is never kept
+    if res.status != "found":
+        return None, location_problem(res.status, text)
+    return res.point, None
+
+
 @app.get("/flood-status", dependencies=[Auth])
 async def flood_status(
     lat: float | None = Query(None, ge=-90, le=90),
     lon: float | None = Query(None, ge=-180, le=180),
     address: str | None = Query(None, max_length=200),
+    location: str | None = Query(None, max_length=200),  # same as address (tools may be set up with either name)
     session: Session = Depends(get_session),
     client: httpx.AsyncClient = Depends(get_client),
 ):
-    if lat is None or lon is None:
-        if not address:
-            raise HTTPException(400, "provide lat and lon, or an address")
-        gauges = service.current_data(session)[0]  # so callers can say "near Brays Bayou"
-        pt = await geo.geocode(client, address, gauges)
-        if pt is None:
-            return {
-                "found": False,
-                "message": "I could not locate that address. Ask the caller for a cross street, ZIP code or nearby landmark.",
-            }
-        lat, lon, approximate = pt
-    else:
-        approximate = False
+    pt, problem = await resolve_point(client, session, lat, lon, address or location)
+    if problem:
+        return problem
+    lat, lon, approximate = pt
     result = await service.build_status(session, client, lat, lon)
     result["location"] = {"lat": lat, "lon": lon}
     result["approximate"] = approximate  # ZIP / neighborhood / landmark: the answer is for the general area
@@ -120,21 +146,16 @@ async def shelters(
     lat: float | None = Query(None, ge=-90, le=90),
     lon: float | None = Query(None, ge=-180, le=180),
     location: str | None = Query(None, max_length=200),
+    address: str | None = Query(None, max_length=200),  # same as location
     limit: int = Query(3, ge=1, le=3),
     session: Session = Depends(get_session),
     client: httpx.AsyncClient = Depends(get_client),
 ):
     """For the voice agent: up to 3 nearest shelters FEMA lists as OPEN, from lat/lon OR a location (ZIP, city, address)."""
-    if (lat is None) != (lon is None):
-        raise HTTPException(400, "provide both lat and lon, or a location")
-    if lat is None:
-        if not location or not location.strip():
-            return {"count": 0, "shelters": [], "message": "Ask the caller for their location: a ZIP code, cross street or landmark."}
-        pt = await geo.geocode(client, location, service.current_data(session)[0])  # Houston-aware, no text kept
-        if pt is None:
-            return {"count": 0, "shelters": [], "found": False,
-                    "message": "I couldn't find that location. Ask for a ZIP code, a cross street or a nearby landmark."}
-        lat, lon = pt.lat, pt.lon
+    pt, problem = await resolve_point(client, session, lat, lon, location or address)
+    if problem:
+        return {"count": 0, "shelters": [], **problem}
+    lat, lon = pt.lat, pt.lon
     try:
         res = await fema_shelters.open_shelters_near(client, lat, lon, limit)
     except fema_shelters.FemaUnavailable:

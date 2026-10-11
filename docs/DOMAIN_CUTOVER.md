@@ -1,9 +1,9 @@
 # Domain cutover: 45-76-57-234.sslip.io → thefloodfather.surf
 
-Same server (Vultr, `45.76.57.234`), new name. Caddy takes its site address from `DOMAIN` in the server's `~/app/.env`
-(`docker-compose.yml` passes it to Caddy, the Caddyfile serves `{$DOMAIN}`) and gets the HTTPS certificate itself.
-`DOMAIN` may list several names, comma-separated; each gets its own certificate. We use that to keep the old name
-working while the voice agent is switched over, so there is no downtime.
+Same server (Vultr, `45.76.57.234`), new name. The site names are in the **Caddyfile's site address**
+(`thefloodfather.surf, 45-76-57-234.sslip.io {`); Caddy gets an HTTPS certificate for each name itself. Both names are
+served during the cutover, so the voice agent keeps working while it is switched over: no downtime.
+(Earlier versions read the name from `DOMAIN` in `~/app/.env`; that setting is no longer used.)
 
 Order matters: **DNS first, then the server.** Let's Encrypt only issues the certificate once the name points at the
 server, and repeated failed attempts hit its rate limit (5 failures per name per hour).
@@ -19,7 +19,7 @@ For `thefloodfather.surf` (Domain Management → DNS):
 - **Delete the old `ALIAS` record on `@`** (Porkbun's parking default). An ALIAS and an A record on the same name conflict.
 - Also delete any **`AAAA` on `@`** and Porkbun's parking `CNAME` on `*`. A stray AAAA makes Let's Encrypt try IPv6 and fail.
 - If a **`CAA`** record exists, it must allow `letsencrypt.org` (or delete it).
-- Optional `www`: add `CNAME www → thefloodfather.surf`, and add `www.thefloodfather.surf` to `DOMAIN` below.
+- Optional `www`: add `CNAME www → thefloodfather.surf`, and add `www.thefloodfather.surf` to the Caddyfile's site address.
 
 Check from your Mac until it answers correctly (can take a few minutes):
 
@@ -31,17 +31,22 @@ dig +short thefloodfather.surf AAAA @1.1.1.1   # must print nothing
 
 ## 2. Server: serve both names
 
+From your Mac (ships the Caddyfile with both names, reloads Caddy, checks everything):
+
+```bash
+DEPLOY_DOMAIN=45-76-57-234.sslip.io bash scripts/deploy.sh --api   # checks via the old name until the new one has its certificate
+```
+
+Then, on the server, the contact name Nominatim/NWS see (optional, no secrets on these lines):
+
 ```bash
 ssh deploy@45.76.57.234
 cd ~/app
 cp -p .env ".env.bak-$(date +%Y%m%d-%H%M)"          # rollback copy (stays chmod 600)
-sed -i 's|^DOMAIN=.*|DOMAIN=thefloodfather.surf, 45-76-57-234.sslip.io|' .env
 sed -i '/^NWS_USER_AGENT=/s|45-76-57-234\.sslip\.io|thefloodfather.surf|' .env
-grep -E '^(DOMAIN|NWS_USER_AGENT)=' .env              # these two lines hold no secrets
-stat -c '%a %n' .env                                  # must still say 600
-sudo docker compose up -d --force-recreate caddy      # ~2 s; the existing certificate is kept in the caddy_data volume
+grep -E '^NWS_USER_AGENT=' .env && stat -c '%a %n' .env   # must still say 600
 sudo docker compose up -d --force-recreate api        # picks up the new NWS_USER_AGENT; a few seconds
-sudo docker compose logs --since 5m caddy | grep -iE "certificate obtained|error" | tail -5
+sudo docker compose logs --since 10m caddy | grep -iE "certificate obtained|error" | tail -5
 ```
 
 You want `certificate obtained successfully` for `thefloodfather.surf`. If you see a `challenge` or `rate` error,
@@ -65,23 +70,14 @@ bash scripts/deploy.sh                                               # full chec
 
 ## 5. Drop the old name (after the agent is switched)
 
-```bash
-ssh deploy@45.76.57.234
-cd ~/app && sed -i 's|^DOMAIN=.*|DOMAIN=thefloodfather.surf|' .env && sudo docker compose up -d --force-recreate caddy
-```
+In the Caddyfile, change the site address to `thefloodfather.surf {`, then `bash scripts/deploy.sh` (zero-downtime reload).
 
 ## Rollback
 
-Old name back as the only name (DNS can stay as it is; the sslip.io name never depended on it):
-
-```bash
-ssh deploy@45.76.57.234
-cd ~/app
-ls -1 .env.bak-*                                     # pick the newest backup
-cp -p .env.bak-YYYYMMDD-HHMM .env && stat -c '%a %n' .env
-sudo docker compose up -d --force-recreate caddy api
-curl -s https://45-76-57-234.sslip.io/health
-```
+Old name back as the only name (DNS can stay as it is; the sslip.io name never depended on it): change the
+Caddyfile's site address to `45-76-57-234.sslip.io {` and run
+`DEPLOY_DOMAIN=45-76-57-234.sslip.io bash scripts/deploy.sh`. (If you changed `NWS_USER_AGENT`, restore it from the
+`.env.bak-*` copy on the server and `sudo docker compose up -d --force-recreate api`.)
 
 Then point the ElevenLabs tools back at `https://45-76-57-234.sslip.io`, and run deploys with
 `DEPLOY_DOMAIN=45-76-57-234.sslip.io bash scripts/deploy.sh` until the new name is fixed.

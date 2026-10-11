@@ -1,5 +1,6 @@
-# Caddy gets a free HTTPS certificate automatically for {$DOMAIN} (ports 80 and 443 must be open, and the
-# domain must point at this server). It also redirects http:// to https://. ElevenLabs only calls HTTPS endpoints.
+# Caddy gets a free HTTPS certificate automatically for each site name below (ports 80 and 443 must be open, and
+# each name's DNS A record must point at this server). Comma-separated; each name gets its own certificate.
+# 45-76-57-234.sslip.io stays until the ElevenLabs agent and every link use thefloodfather.surf.
 {
 	servers {
 		# HTTP/1.1 and HTTP/2 over TCP only. HTTP/3 would need UDP 443, which the firewall keeps closed.
@@ -7,7 +8,7 @@
 	}
 }
 
-{$DOMAIN} {
+thefloodfather.surf, 45-76-57-234.sslip.io {
 	# Largest legitimate body is a /post-call transcript (20,000 characters). Anything bigger gets 413.
 	request_body {
 		max_size 256KB

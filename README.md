@@ -114,7 +114,7 @@ Each line should say OK. If USGS fails, check the `countyCd` parameter name in `
    ```bash
    curl -fsSL https://get.docker.com | sh
    git clone <your repo> && cd <repo>
-   cp .env.example .env && nano .env     # set every value, including DOMAIN and POSTGRES_PASSWORD
+   cp .env.example .env && nano .env     # set every value, including POSTGRES_PASSWORD (site names are in the Caddyfile)
    docker compose up -d --build
    ```
 4. Check `https://<your domain>/health`. Caddy gets the HTTPS certificate automatically.

@@ -68,6 +68,7 @@ def _geocode_with(address, handler):
 def empty_caches(monkeypatch):
     monkeypatch.setattr(geo, "_zip_cache", {})
     monkeypatch.setattr(geo, "_search_cache", {})
+    monkeypatch.setattr(geo, "_settlement_cache", {})
 
 
 def test_zip_only_uses_zippopotam_not_census():
@@ -186,6 +187,8 @@ def test_unknown_place_falls_back_to_bounded_nominatim_search():
             return httpx.Response(200, json=NO_CENSUS_MATCH)
         assert request.url.host == "nominatim.openstreetmap.org"
         q = request.url.params
+        if q.get("featureType") == "settlement":
+            return httpx.Response(200, json=[])  # the Astrodome is not a city or town
         assert q["q"] == "Astrodome"
         assert q["viewbox"] == geo.HOUSTON_VIEWBOX and q["bounded"] == "1"
         assert q["countrycodes"] == "us" and q["limit"] == "1"
@@ -194,7 +197,7 @@ def test_unknown_place_falls_back_to_bounded_nominatim_search():
 
     result, calls = _geocode_with("Astrodome", handler)
     assert result == geo.GeoPoint(29.6852, -95.4078, approximate=True)
-    assert [c.url.host for c in calls] == ["geocoding.geo.census.gov", "nominatim.openstreetmap.org"]
+    assert [c.url.host for c in calls] == ["geocoding.geo.census.gov", "nominatim.openstreetmap.org", "nominatim.openstreetmap.org"]  # Census, city/town lookup, landmark search
 
 
 def test_nominatim_place_result_is_cached():
@@ -223,7 +226,7 @@ def test_nothing_found_anywhere_returns_none():
 
     result, calls = _geocode_with("zzqx nowhere", handler)
     assert result is None
-    assert [c.url.host for c in calls] == ["geocoding.geo.census.gov", "nominatim.openstreetmap.org"]
+    assert [c.url.host for c in calls] == ["geocoding.geo.census.gov", "nominatim.openstreetmap.org", "nominatim.openstreetmap.org", "nominatim.openstreetmap.org"]  # Census, city/town, landmark, city/town elsewhere
     assert geo._search_cache == {}
 
 
@@ -313,7 +316,7 @@ def test_unknown_bayou_with_no_gauge_falls_through_to_census_and_nominatim():
 
     result, calls = _geocode_gauges("Sims Bayou", handler)  # no Sims gauge in this fixture list
     assert result is None
-    assert [c.url.host for c in calls] == ["geocoding.geo.census.gov", "nominatim.openstreetmap.org"]
+    assert [c.url.host for c in calls] == ["geocoding.geo.census.gov", "nominatim.openstreetmap.org", "nominatim.openstreetmap.org", "nominatim.openstreetmap.org"]  # Census, city/town, landmark, city/town elsewhere
 
 
 def test_caches_never_hold_the_searched_text():
@@ -330,7 +333,7 @@ def test_caches_never_hold_the_searched_text():
             await geo.geocode(client, "Astrodome")
 
     asyncio.run(run())
-    keys = list(geo._zip_cache) + list(geo._search_cache)
-    assert len(keys) == 2
+    keys = list(geo._zip_cache) + list(geo._search_cache) + list(geo._settlement_cache)
+    assert len(keys) == 2  # the ZIP, and "Astrodome" (answered here by the city/town lookup)
     assert all(re.fullmatch(r"[0-9a-f]{64}", k) for k in keys)  # SHA-256 hashes only
     assert not {"77002", "astrodome", "Astrodome"} & set(keys)

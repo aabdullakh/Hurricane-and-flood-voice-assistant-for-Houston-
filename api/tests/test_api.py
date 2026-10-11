@@ -113,23 +113,26 @@ def test_store_series_is_idempotent(client):
 
 # ---------- address handling ----------
 def test_flood_status_needs_a_location(client):
-    assert client.get("/flood-status", headers=HEADERS).status_code == 400
+    # Not a bare 400: a structured answer the agent can read out.
+    d = client.get("/flood-status", headers=HEADERS).json()
+    assert d["found"] is False and d["reason"] == "missing_location" and "77002" in d["message"]
+    assert client.get("/flood-status?lat=29.76", headers=HEADERS).status_code == 400  # half a coordinate pair
 
 
 def test_unresolvable_address_asks_agent_to_reask(client, monkeypatch):
     async def none(*a, **k):
-        return None
+        return geo.Located("not_found", None)
 
-    monkeypatch.setattr(geo, "geocode", none)
+    monkeypatch.setattr(geo, "locate", none)
     r = client.get("/flood-status?address=nowhere", headers=HEADERS).json()
-    assert r["found"] is False and "cross street" in r["message"]
+    assert r["found"] is False and r["reason"] == "not_found" and "cross street" in r["message"]
 
 
 def test_flood_status_marks_area_lookups_approximate(client, monkeypatch):
     async def area(*a, **k):
-        return geo.GeoPoint(29.7604, -95.3698, approximate=True)
+        return geo.Located("found", geo.GeoPoint(29.7604, -95.3698, approximate=True))
 
-    monkeypatch.setattr(geo, "geocode", area)
+    monkeypatch.setattr(geo, "locate", area)
     r = client.get("/flood-status?address=downtown", headers=HEADERS).json()
     assert r["found"] is True and r["approximate"] is True
 

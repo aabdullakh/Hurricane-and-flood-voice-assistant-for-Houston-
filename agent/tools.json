@@ -1,33 +1,33 @@
 {
-  "_note": "REFERENCE SPEC to copy into the ElevenLabs dashboard (Agent -> Tools -> Add webhook tool). It is NOT an import file; the dashboard's field names may differ. Replace {{DOMAIN}} with your HTTPS domain. Store the API key as a SECRET header value, never in the prompt.",
+  "_note": "REFERENCE SPEC to copy into the ElevenLabs dashboard (Agent -> Tools -> Add webhook tool). It is NOT an import file; the dashboard's field names may differ. Base URL: https://thefloodfather.surf (45-76-57-234.sslip.io still works during the cutover). Store the API key as a SECRET header value, never in the prompt.",
   "auth": { "header": "X-API-Key", "value": "<same value as API_SHARED_SECRET in .env>" },
   "tools": [
     {
       "name": "lookup_profile",
       "description": "Look up what we remember about the person on the phone. Call this at the start of every call.",
       "method": "POST",
-      "url": "https://{{DOMAIN}}/profile/lookup",
+      "url": "https://thefloodfather.surf/profile/lookup",
       "body": { "caller_id": "the caller's phone number [VERIFY: use ElevenLabs' system dynamic variable for caller number, e.g. system__caller_id, in the dashboard]" }
     },
     {
       "name": "get_flood_status",
-      "description": "Get current flood risk, nearest gauge readings and active weather alerts for an address. Use when the caller asks about flooding near them.",
+      "description": "Get current flood risk, nearest gauge readings and active weather alerts for a place in Greater Houston. Use when the caller asks about flooding near them. If found is false, read the message: it says what wasn't found (or that the place is outside the area) and what to ask for instead.",
       "method": "GET",
-      "url": "https://{{DOMAIN}}/flood-status",
-      "query": { "address": "Street address, or nearest cross street / ZIP code, as the caller said it" }
+      "url": "https://thefloodfather.surf/flood-status",
+      "query": { "location": "What the caller said: a city (Katy), ZIP (77002), street address, cross street or landmark. 'address' also works." }
     },
     {
       "name": "get_shelters",
       "description": "Find the nearest shelters FEMA lists as open. Give location (ZIP, city, address or landmark) or lat+lon. Tell the caller to confirm a shelter is open; if none, read the message (call 211).",
       "method": "GET",
-      "url": "https://{{DOMAIN}}/shelters",
+      "url": "https://thefloodfather.surf/shelters",
       "query": { "location": "caller's ZIP code, city, address or landmark (or use lat+lon instead)", "lat": "optional: get_flood_status.location.lat", "lon": "optional: get_flood_status.location.lon", "limit": "3" }
     },
     {
       "name": "save_profile",
       "description": "Save household details ONLY after the caller says yes to being remembered.",
       "method": "POST",
-      "url": "https://{{DOMAIN}}/profile",
+      "url": "https://thefloodfather.surf/profile",
       "body": {
         "caller_id": "the caller's phone number",
         "consent": "true (only if the caller agreed)",
@@ -41,14 +41,14 @@
       "name": "forget_profile",
       "description": "Delete everything we saved about the caller. Use when they ask to be forgotten.",
       "method": "POST",
-      "url": "https://{{DOMAIN}}/profile/forget",
+      "url": "https://thefloodfather.surf/profile/forget",
       "body": { "caller_id": "the caller's phone number" }
     }
   ],
   "post_call": {
     "_note": "After each call, send the transcript to POST /post-call (use ElevenLabs' post-call webhook if available [VERIFY], or call it from a small script). Stores only the structured triage result, not the transcript.",
     "method": "POST",
-    "url": "https://{{DOMAIN}}/post-call",
+    "url": "https://thefloodfather.surf/post-call",
     "body": { "transcript": "full transcript text", "language": "en" }
   }
 }

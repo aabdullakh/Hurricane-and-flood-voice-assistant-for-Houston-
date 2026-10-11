@@ -8,7 +8,7 @@ Base URL (the production server, HTTPS by Caddy):
 https://thefloodfather.surf
 ```
 
-> During the domain cutover the old name `https://45-76-57-234.sslip.io` keeps working only while it is still listed in `DOMAIN` on the server (see `docs/DOMAIN_CUTOVER.md`). Switch all 5 tools to the new URL before removing it.
+> The old name `https://45-76-57-234.sslip.io` still works too (both names are in the Caddyfile). Switch all 5 tools to `https://thefloodfather.surf`; the old name will be removed later (see `docs/DOMAIN_CUTOVER.md`).
 
 ## Auth header (same for all 5 tools)
 
@@ -53,7 +53,7 @@ Returns `{"found": false}` or `{"found": true, "language", "name", "needs", "not
 | Field | Value |
 |---|---|
 | Name | `get_flood_status` |
-| Description | Get current flood risk, nearest stream gauge readings and active National Weather Service alerts for a Houston-area address. Use when the caller asks about flooding, water levels, or storm conditions near them. Always tell the caller the data time and source from the result. |
+| Description | Get current flood risk, nearest stream gauge readings and active National Weather Service alerts for a place in Greater Houston. Use when the caller asks about flooding, water levels, or storm conditions near them. Always tell the caller the data time and source from the result. If `found` is false, read `message`: it says what wasn't found (or that the place is outside the area) and what to ask for instead. |
 | Method | `GET` |
 | URL | `https://thefloodfather.surf/flood-status` |
 | Headers | `X-API-Key: YOUR_KEY` |
@@ -62,9 +62,11 @@ Returns `{"found": false}` or `{"found": true, "language", "name", "needs", "not
 
 | Identifier | Type | Required | Value type | Description (for the LLM) |
 |---|---|---|---|---|
-| `address` | string | yes | LLM prompt | Street address, nearest cross street, or ZIP code in the Houston area, as the caller said it. Add "Houston TX" if the caller did not give a city. Max 200 characters. |
+| `location` | string | yes | LLM prompt | What the caller said: a city (Houston, Katy, Sugar Land, Pearland, The Woodlands, Galveston), a ZIP code, a street address, a cross street or a landmark. Max 200 characters. (The older name `address` also works.) |
 
 Returns `found`, `risk` (`low` / `elevated` / `high` / `unknown`), `reasons`, `caveat`, `data_as_of`, `nearest_gauges`, `alerts`, `speak_hint`, `location.lat`, `location.lon`, `replay`.
+
+If the place can't be used it returns `found: false` with `reason` (`not_found`, `outside_area` or `missing_location`), the `query`, a `message` to read, and `examples` of what works ("a ZIP like 77002", "a cross street like Main St and Texas Ave", "a city like Katy").
 
 ## 3. `get_shelters`
 

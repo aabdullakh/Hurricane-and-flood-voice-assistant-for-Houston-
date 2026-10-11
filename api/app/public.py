@@ -33,10 +33,7 @@ def get_client(request: Request) -> httpx.AsyncClient:
 # Same box the geocoder searches: Harris County plus a margin (Katy, Sugar Land, The Woodlands).
 _left, _top, _right, _bottom = (float(v) for v in geo.HOUSTON_VIEWBOX.split(","))
 AREA = {"lat_min": _bottom, "lat_max": _top, "lon_min": _left, "lon_max": _right}
-
-
-def in_area(lat: float, lon: float) -> bool:
-    return AREA["lat_min"] <= lat <= AREA["lat_max"] and AREA["lon_min"] <= lon <= AREA["lon_max"]
+in_area = geo.in_area  # one definition of "Greater Houston" for the agent and the website
 
 
 def _require_area(lat: float, lon: float) -> None:
@@ -128,11 +125,10 @@ class GeocodeIn(BaseModel):
 @router.post("/geocode", dependencies=[Depends(geocode_limit)])
 async def public_geocode(body: GeocodeIn, session: Session = Depends(get_session), client: httpx.AsyncClient = Depends(get_client)):
     """POST so the text isn't in any URL or access log. Not stored or cached here (ZIP and place names are)."""
-    pt = await geo.geocode(client, body.q, service.current_data(session)[0])
-    if pt is None:
-        return {"found": False, "reason": "not_found"}
-    if not in_area(pt.lat, pt.lon):
-        return {"found": False, "reason": "outside_area"}
+    res = await geo.locate(client, body.q, service.current_data(session)[0])
+    if res.status != "found":
+        return {"found": False, "reason": res.status}  # "not_found" or "outside_area"; the page words it in EN/ES
+    pt = res.point
     return {"found": True, "lat": round(pt.lat, 4), "lon": round(pt.lon, 4), "approximate": pt.approximate}
 
 
