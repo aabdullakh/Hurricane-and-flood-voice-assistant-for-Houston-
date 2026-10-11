@@ -20,13 +20,28 @@
 		# OpenStreetMap blocks tile requests with no Referer. This sends only the origin (no path or query)
 		# to other sites, and nothing over plain HTTP.
 		Referrer-Policy "strict-origin-when-cross-origin"
-		Permissions-Policy "geolocation=(), microphone=(), camera=()"
-		# Dashboard: inline script/style, Leaflet from unpkg.com, map tiles from OpenStreetMap.
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+		# Microphone for this site only (the voice widget runs in our own page, not an iframe).
+		Permissions-Policy "geolocation=(), microphone=(self), camera=()"
+		# Site: our own scripts/styles/fonts/map tiles only (Leaflet and fonts are in web/vendor, tiles come through /public/tiles).
+		# Voice widget (ElevenLabs, pinned 0.19.0 + SRI): its script from unpkg, its API + voice WebSocket (US endpoint,
+		# the widget's default), and its orb/flag images from ElevenLabs' public bucket. No inline scripts anywhere.
+		# style-src: no 'unsafe-inline'. The one hash is the widget 0.19.0's own <style> block; if you upgrade the widget,
+		# Chrome's console prints the new hash in a CSP error: replace it here.
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://unpkg.com/@elevenlabs/convai-widget-embed@0.19.0/; style-src 'self' 'sha256-839faB25O7BNWpXexY0KZ0swHaDOx11GwgyX1wC/Wiw='; img-src 'self' data: https://storage.googleapis.com/eleven-public-cdn/; font-src 'self'; connect-src 'self' https://api.us.elevenlabs.io wss://api.us.elevenlabs.io; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 		-Server
 	}
 
+	# Versioned third-party files (folder names carry the version) can be cached for a year.
+	header /vendor/* Cache-Control "public, max-age=31536000, immutable"
+	header /assets/* Cache-Control "public, max-age=300"
+
 	encode zstd gzip
-	# Caddy replaces X-Forwarded-For with the real client IP, so the API's bad-key limit can't be dodged by spoofing it.
-	reverse_proxy api:8000
+	# The api's per-IP limits read X-Forwarded-For (trusted only from this Caddy, see docker-compose.yml). Set it to the
+	# real client address ourselves, and drop headers a client could use to pretend to be someone else.
+	# UPSTREAM is only set for local testing; on the server it's the api container.
+	reverse_proxy {$UPSTREAM:api:8000} {
+		header_up X-Forwarded-For {remote_host}
+		header_up -X-Real-IP
+		header_up -Forwarded
+	}
 }

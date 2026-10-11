@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
@@ -14,18 +13,18 @@ from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import geo, memory, replay, service, triage
+from . import geo, memory, public, replay, service, triage
 from .config import REPO_ROOT, settings
 from .db import CallSummary, Profile, get_session, init_db, to_db, utcnow
 from .poller import poll_loop
 from .security import hash_caller, require_key
 from .state import STATE
-from .sources.fema_shelters import (
-    get_open_shelters,
-    resolve_location,
-)
+from .sources import fema_shelters
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("api")
+# httpx logs every outgoing URL at INFO, which would put searched addresses and map points in the logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -52,6 +51,7 @@ def get_client(request: Request) -> httpx.AsyncClient:
 
 
 Auth = Depends(require_key)
+app.include_router(public.router)  # read-only website data, mounted before the static files
 
 
 def require_admin_enabled() -> None:
@@ -110,100 +110,42 @@ async def flood_status(
 
 
 
+SHELTERS_NONE = "FEMA lists no open shelters near you right now. Call 211."
+SHELTERS_DOWN = "The FEMA shelter list isn't reachable right now. Tell the caller to call 211 to find an open shelter."
+SHELTERS_FOUND = "FEMA lists these shelters as open. Distances are in a straight line. Tell the caller to confirm a shelter is open before going, or call 211."
+
+
 @app.get("/shelters", dependencies=[Auth])
 async def shelters(
     lat: float | None = Query(None, ge=-90, le=90),
     lon: float | None = Query(None, ge=-180, le=180),
     location: str | None = Query(None, max_length=200),
-    limit: int = Query(3, ge=1, le=10),
+    limit: int = Query(3, ge=1, le=3),
+    session: Session = Depends(get_session),
     client: httpx.AsyncClient = Depends(get_client),
 ):
-    # Convert a city, ZIP code, or address to coordinates.
-    if lat is None or lon is None:
-        if lat is not None or lon is not None:
-            raise HTTPException(
-                400, "Provide both lat and lon"
-            )
-
-        if not location:
-            return {
-                "count": 0,
-                "shelters": [],
-                "message": "Ask the caller for their location.",
-            }
-
-        try:
-            coords = await resolve_location(client, location)
-        except (httpx.HTTPError, ValueError):
-            raise HTTPException(
-                503, "Location lookup is temporarily unavailable"
-            )
-
-        if coords is None:
-            return {
-                "count": 0,
-                "shelters": [],
-                "message": "Location not found. Ask for a city, state, or ZIP code.",
-            }
-
-        lat, lon = coords
-
-    # Retrieve FEMA's reported open shelters.
+    """For the voice agent: up to 3 nearest shelters FEMA lists as OPEN, from lat/lon OR a location (ZIP, city, address)."""
+    if (lat is None) != (lon is None):
+        raise HTTPException(400, "provide both lat and lon, or a location")
+    if lat is None:
+        if not location or not location.strip():
+            return {"count": 0, "shelters": [], "message": "Ask the caller for their location: a ZIP code, cross street or landmark."}
+        pt = await geo.geocode(client, location, service.current_data(session)[0])  # Houston-aware, no text kept
+        if pt is None:
+            return {"count": 0, "shelters": [], "found": False,
+                    "message": "I couldn't find that location. Ask for a ZIP code, a cross street or a nearby landmark."}
+        lat, lon = pt.lat, pt.lon
     try:
-        records = await get_open_shelters(client, lat, lon)
-    except (httpx.HTTPError, ValueError):
-        raise HTTPException(
-            503, "Shelter service is temporarily unavailable"
-        )
-
-    results = []
-
-    for item in records:
-        if str(item.get("shelter_status") or "").strip().upper() != "OPEN":
-            continue
-
-        try:
-            shelter_lat = float(item["latitude"])
-            shelter_lon = float(item["longitude"])
-        except (ValueError, TypeError, KeyError):
-            continue
-
-        distance = geo.haversine_miles(
-            lat, lon, shelter_lat, shelter_lon
-        )
-
-        results.append({
-            "name": item.get("shelter_name"),
-            "address": item.get("address"),
-            "city": item.get("city"),
-            "state": item.get("state"),
-            "zip": item.get("zip"),
-            "status": "OPEN",
-            "distance_miles": round(distance, 1),
-            "lat": shelter_lat,
-            "lon": shelter_lon,
-            "source": "FEMA Open Shelters",
-        })
-
-    results.sort(key=lambda item: item["distance_miles"])
-    results = results[:limit]
-
+        res = await fema_shelters.open_shelters_near(client, lat, lon, limit)
+    except fema_shelters.FemaUnavailable:
+        return {"count": 0, "shelters": [], "available": False, "source": fema_shelters.SOURCE, "message": SHELTERS_DOWN}
+    items = [{k: s[k] for k in ("name", "address", "distance_miles", "source")} for s in res["shelters"]]
     return {
-        "count": len(results),
-        "shelters": results,
-        "location": {"lat": lat, "lon": lon},
-        "source": "FEMA Open Shelters",
-        "sample_data": False,
-        "message": (
-            "Shelters are reported open, but call or check "
-            "with local officials to confirm availability."
-            if results else
-            "No open shelters are listed by FEMA within "
-            "50 miles. Check local emergency management, "
-            "Red Cross, or 211 for additional assistance."
-        ),
+        "count": len(items), "shelters": items, "available": True,
+        "location": {"lat": round(lat, 2), "lon": round(lon, 2)},
+        "source": res["source"], "checked_at": res["checked_at"], "radius_miles": res["radius_miles"],
+        "message": SHELTERS_FOUND if items else SHELTERS_NONE,
     }
-
 
 
 class ProfileIn(BaseModel):

@@ -40,6 +40,31 @@ DISCLAIMER = (
 LOW_CAVEAT = "No flood alerts or fast-rising gauges in the data available. This is not a guarantee of safety."
 
 
+def gauge_state(view: dict) -> str:
+    """One gauge on its own, with the same thresholds assess() uses. Never 'safe': only what the reading shows."""
+    if view.get("age_minutes") is None or view["age_minutes"] > settings.stale_minutes:
+        return "no_recent_data"
+    t = view.get("trend_ft_per_hr")
+    if t is None:
+        return "no_trend"
+    if t >= settings.rise_high_ft_hr:
+        return "rising_fast"
+    if t >= settings.rise_elevated_ft_hr:
+        return "rising"
+    return "not_rising"
+
+
+def alert_level(event: str | None) -> str:
+    """'high' / 'elevated' for the flood and storm alerts the risk rules use, 'other' for everything else."""
+    ev = (event or "").strip().lower()
+    return "high" if ev in HIGH_EVENTS else "elevated" if ev in ELEVATED_EVENTS else "other"
+
+
+def thresholds() -> dict:
+    return {"rise_elevated_ft_hr": settings.rise_elevated_ft_hr, "rise_high_ft_hr": settings.rise_high_ft_hr,
+            "stale_minutes": settings.stale_minutes, "gauge_max_miles": settings.gauge_max_miles}
+
+
 def miles_words(miles: float) -> str:
     """Distance as a person would say it: 'less than a quarter mile', 'about half a mile', 'about 25 miles'."""
     if miles < 0.25:

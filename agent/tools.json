@@ -18,10 +18,10 @@
     },
     {
       "name": "get_shelters",
-      "description": "Find nearby shelters or help locations. Call after you know the caller's location.",
+      "description": "Find the nearest shelters FEMA lists as open. Give location (ZIP, city, address or landmark) or lat+lon. Tell the caller to confirm a shelter is open; if none, read the message (call 211).",
       "method": "GET",
       "url": "https://{{DOMAIN}}/shelters",
-      "query": { "lat": "latitude from get_flood_status.location.lat", "lon": "longitude from get_flood_status.location.lon", "limit": "2" }
+      "query": { "location": "caller's ZIP code, city, address or landmark (or use lat+lon instead)", "lat": "optional: get_flood_status.location.lat", "lon": "optional: get_flood_status.location.lon", "limit": "3" }
     },
     {
       "name": "save_profile",

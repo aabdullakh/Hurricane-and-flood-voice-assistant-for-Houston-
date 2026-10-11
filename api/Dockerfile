@@ -17,6 +17,7 @@ USER app
 WORKDIR /srv/api
 
 EXPOSE 8000
-# --proxy-headers: take the client IP from Caddy's X-Forwarded-For. Safe only because port 8000 is not
-# published; the only thing that can reach it is Caddy, which overwrites that header.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*", "--no-server-header"]
+# --proxy-headers: take the client IP from X-Forwarded-For, but only when the request comes from an address in
+# $FORWARDED_ALLOW_IPS (docker-compose.yml sets it to Caddy's fixed address; uvicorn's default is 127.0.0.1).
+# From any other address the header is ignored, and uvicorn takes the rightmost untrusted entry, so it can't be spoofed.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-server-header"]

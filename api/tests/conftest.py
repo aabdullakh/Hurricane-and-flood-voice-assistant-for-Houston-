@@ -19,7 +19,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import delete  # noqa: E402
 
 from app.db import CallSummary, GaugeReading, Profile, SessionLocal, init_db  # noqa: E402
-from app import security  # noqa: E402
+from app import public, security  # noqa: E402
+from app.sources import fema_shelters, openmeteo  # noqa: E402
 from app.main import app  # noqa: E402
 from app.sources import nws  # noqa: E402
 from app.state import STATE  # noqa: E402
@@ -37,5 +38,17 @@ def client():
     STATE.mode, STATE.replay_name, STATE.replay_index = "live", None, 0
     nws.clear_cache()
     security._failures.clear()
+    public.clear_caches()
+    openmeteo.clear_cache()
+    fema_shelters.clear_cache()
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def no_live_fema(monkeypatch):
+    """Tests never call FEMA. Default: FEMA answers with no open shelters; tests override _query when needed."""
+    async def empty(*a, **k):
+        return []
+
+    monkeypatch.setattr(fema_shelters, "_query", empty)

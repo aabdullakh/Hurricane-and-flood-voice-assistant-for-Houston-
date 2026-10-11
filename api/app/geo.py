@@ -1,6 +1,7 @@
 """Distance helpers and address geocoding."""
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 from typing import Iterable, NamedTuple
@@ -20,6 +21,11 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 _ZIP_ONLY = re.compile(r"^\s*(\d{5})(?:-\d{4})?(?:[\s,]+(?:houston|tx|texas))*[\s,]*$", re.IGNORECASE)
 _zip_cache: dict[str, tuple[float, float]] = {}  # successes only, so a failed lookup is retried next time
 _search_cache: dict[str, tuple[float, float]] = {}  # Nominatim free-text results, same rule
+
+
+def _cache_key(text: str) -> str:
+    """Caches are keyed by a SHA-256 hash, so no searched text (address, place) is kept in memory."""
+    return hashlib.sha256(text.encode()).hexdigest()
 # Nominatim viewbox (left, top, right, bottom): Harris County plus a margin for Katy, Sugar Land, The Woodlands.
 HOUSTON_VIEWBOX = "-96.00,30.25,-94.85,29.45"
 
@@ -125,11 +131,12 @@ async def _nominatim(client: httpx.AsyncClient, params: dict) -> tuple[float, fl
 
 async def geocode_zip(client: httpx.AsyncClient, zip_code: str) -> tuple[float, float] | None:
     """ZIP centroid from zippopotam.us, falling back to Nominatim. Never raises."""
-    if zip_code in _zip_cache:
-        return _zip_cache[zip_code]
+    key = _cache_key(zip_code)
+    if key in _zip_cache:
+        return _zip_cache[key]
     pt = await _zippopotam(client, zip_code) or await _nominatim(client, {"postalcode": zip_code, "country": "US"})
     if pt is not None:
-        _zip_cache[zip_code] = pt
+        _zip_cache[key] = pt
     return pt
 
 
@@ -152,7 +159,7 @@ async def _census(client: httpx.AsyncClient, address: str) -> tuple[float, float
 
 async def search_place(client: httpx.AsyncClient, text: str) -> tuple[float, float] | None:
     """Free-text landmark search on Nominatim, limited to the Houston area. Never raises."""
-    key = places.normalize(text)
+    key = _cache_key(places.normalize(text))
     if key in _search_cache:
         return _search_cache[key]
     pt = await _nominatim(

@@ -15,9 +15,32 @@ App directory on the server: `/home/deploy/app` (owned by `deploy`). No secrets 
 
 Docker commands need `sudo` (deploy is deliberately not in the `docker` group, which would be the same as root without a password).
 
-## Update to a new version
+## Update the dashboard or Caddyfile (one command)
 
-From your Mac, in the project folder (copies code only, never your local `.env`, database or git data):
+From your Mac, in the project folder:
+
+```bash
+bash scripts/deploy.sh --dry-run         # what would change; touches nothing
+bash scripts/deploy.sh                   # deploy web/ + Caddyfile + docker-compose.yml; sudo asks for your password once
+bash scripts/deploy.sh --api             # ALSO ship the backend (api/) and rebuild only the api container
+```
+
+Use `--api` whenever anything under `api/` changed. The website needs the backend's `/public/*` endpoints; if they're missing on the server, the script stops with "run again with --api".
+
+**Public website endpoints** (no key, read-only, per-IP rate limits, Houston area only, coordinates rounded to ~1 km):
+
+| Endpoint | What it returns | Limit per IP |
+|---|---|---|
+| `GET /public/conditions?lat=&lon=` | risk, nearest gauges, NWS alerts for that point, rain (Open-Meteo model), nearest official shelters | 30/min |
+| `POST /public/geocode` `{"q": "..."}` | lat/lon for an address, ZIP, place or bayou (POST so the text is never in a URL or log) | 20/min |
+| `GET /public/shelters?lat=&lon=` | official shelters only (entries need `source_url` and `as_of`) | 60/min |
+| `GET /public/tiles/{z}/{x}/{y}.png` | OpenStreetMap tiles, proxied + cached in memory (zoom 9–15, Houston only; 300 upstream fetches/min total) | 900/min |
+
+It sends only `web/`, `Caddyfile` and `docker-compose.yml`, and refuses to run if anything secret could be copied (.env files, keys, certificates, databases, hidden files, symlinks, or any file containing a value from your local `.env`). It copies only changed files. Dashboard files go live without a restart (the api container serves `~/app/web` from a read-only mount). A changed Caddyfile is validated inside the running Caddy, then reloaded with no downtime; if validation fails the previous Caddyfile is restored. It ends with an HTTPS health check, checks that the served headers and files match your local copies, and prints `DEPLOYED OK` or `DEPLOY FAILED: <reason>`.
+
+## Update to a new version (backend code)
+
+For changes under `api/`, from your Mac, in the project folder (copies code only, never your local `.env`, database or git data):
 
 ```bash
 rsync -av \
@@ -85,6 +108,20 @@ Then paste it into the `X-API-Key` secret in ElevenLabs, and copy something else
 ## Add the Gemini key later
 
 Edit `~/app/.env` on the server (`nano .env`), set `GEMINI_API_KEY=...`, save, then `sudo docker compose up -d --force-recreate api`.
+
+## Voice widget (ElevenLabs) on the dashboard
+
+The dashboard embeds the ElevenLabs Agents widget, pinned to `@elevenlabs/convai-widget-embed@0.19.0` with a Subresource Integrity hash. Only the public agent ID is in the page; no key or secret. Its two audio processors are served from this site (`web/vendor/elevenlabs-convai-0.19.0/`) so the Content-Security-Policy needs no `blob:`/`data:` scripts.
+
+To upgrade the widget (test locally first; the CSP will block anything new):
+
+1. New version number: `curl -sI https://unpkg.com/@elevenlabs/convai-widget-embed | grep -i location`
+2. New integrity hash: `curl -sL https://unpkg.com/@elevenlabs/convai-widget-embed@NEW/dist/index.js | openssl dgst -sha384 -binary | openssl base64 -A`
+3. In `web/index.html`: update the script URL, `integrity`, and the two `worklet-path-*` folder names. Re-extract the two worklets from the new bundle into `web/vendor/elevenlabs-convai-NEW/` (they are the template strings containing `registerProcessor("rawAudioProcessor"` and `registerProcessor("audioConcatProcessor"`).
+4. In `Caddyfile`: update `https://unpkg.com/@elevenlabs/convai-widget-embed@NEW/` in `script-src`.
+5. Deploy: rsync, then `sudo docker compose up -d --build api` and `sudo docker compose up -d --force-recreate caddy`.
+
+If you change the widget's `server-location` (default `us`) or turn on WebRTC for the agent, the CSP `connect-src` must change too (e.g. `api.elevenlabs.io` or `livekit.rtc.elevenlabs.io`).
 
 ## If HTTPS ever fails
 
