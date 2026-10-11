@@ -2,15 +2,13 @@
 
 Agent: **Houston Flood Help Line** → **Tools** → **Add tool** → **Webhook**.
 
-Base URL (Cloudflare quick tunnel, **temporary**):
+Base URL (the production server, HTTPS by Caddy):
 
 ```
-https://expand-stripes-satisfy-everybody.trycloudflare.com
+https://thefloodfather.surf
 ```
 
-> A quick tunnel gets a **new random URL every time `cloudflared` restarts**. If it changes, update the URL in all 5 tools. For the final demo, use the Vultr domain instead.
-> On the venue network QUIC is blocked, so start the tunnel with:
-> `cloudflared tunnel --no-autoupdate --protocol http2 --url http://localhost:8000`
+> During the domain cutover the old name `https://45-76-57-234.sslip.io` keeps working only while it is still listed in `DOMAIN` on the server (see `docs/DOMAIN_CUTOVER.md`). Switch all 5 tools to the new URL before removing it.
 
 ## Auth header (same for all 5 tools)
 
@@ -39,7 +37,7 @@ Tools that take `caller_id` should use the **dynamic variable** `system__caller_
 | Name | `lookup_profile` |
 | Description | Look up what we remember about the person on the phone (name, language, household needs). Call this once at the start of every call, before answering questions. |
 | Method | `POST` |
-| URL | `https://expand-stripes-satisfy-everybody.trycloudflare.com/profile/lookup` |
+| URL | `https://thefloodfather.surf/profile/lookup` |
 | Headers | `X-API-Key: YOUR_KEY` |
 
 **Body parameters**
@@ -57,7 +55,7 @@ Returns `{"found": false}` or `{"found": true, "language", "name", "needs", "not
 | Name | `get_flood_status` |
 | Description | Get current flood risk, nearest stream gauge readings and active National Weather Service alerts for a Houston-area address. Use when the caller asks about flooding, water levels, or storm conditions near them. Always tell the caller the data time and source from the result. |
 | Method | `GET` |
-| URL | `https://expand-stripes-satisfy-everybody.trycloudflare.com/flood-status` |
+| URL | `https://thefloodfather.surf/flood-status` |
 | Headers | `X-API-Key: YOUR_KEY` |
 
 **Query parameters**
@@ -75,7 +73,7 @@ Returns `found`, `risk` (`low` / `elevated` / `high` / `unknown`), `reasons`, `c
 | Name | `get_shelters` |
 | Description | Find the nearest shelters that FEMA lists as open. Pass the caller's location (ZIP code, city, address or landmark), or lat and lon from get_flood_status. Read at most two, say they are FEMA's list and that distances are in a straight line, and tell the caller to confirm a shelter is open before going. If the list is empty or unavailable, read the message and tell the caller to call 211. |
 | Method | `GET` |
-| URL | `https://expand-stripes-satisfy-everybody.trycloudflare.com/shelters` |
+| URL | `https://thefloodfather.surf/shelters` |
 | Headers | `X-API-Key: YOUR_KEY` |
 
 **Query parameters** (give `location`, or both `lat` and `lon`)
@@ -96,7 +94,7 @@ Returns `count`, `shelters` (each: `name`, `address`, `distance_miles`, `source`
 | Name | `save_profile` |
 | Description | Save household details so we can help faster next time. Call ONLY after the caller clearly says yes to "Would you like me to remember this for next time?". Never call it without that yes. |
 | Method | `POST` |
-| URL | `https://expand-stripes-satisfy-everybody.trycloudflare.com/profile` |
+| URL | `https://thefloodfather.surf/profile` |
 | Headers | `X-API-Key: YOUR_KEY` |
 
 **Body parameters**
@@ -119,7 +117,7 @@ Returns `{"saved": true, "backboard": ...}`.
 | Name | `forget_profile` |
 | Description | Delete everything we saved about the caller. Use when the caller asks to be forgotten or to delete their information, then confirm it is done. |
 | Method | `POST` |
-| URL | `https://expand-stripes-satisfy-everybody.trycloudflare.com/profile/forget` |
+| URL | `https://thefloodfather.surf/profile/forget` |
 | Headers | `X-API-Key: YOUR_KEY` |
 
 **Body parameters**

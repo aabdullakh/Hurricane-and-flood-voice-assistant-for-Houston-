@@ -1,6 +1,6 @@
 # Deploying and running the backend
 
-Server: Vultr, Ubuntu 24.04, `45.76.57.234`, served at **https://45-76-57-234.sslip.io**.
+Server: Vultr, Ubuntu 24.04, `45.76.57.234`, served at **https://thefloodfather.surf** (the name comes from `DOMAIN` in the server's `.env`; see `docs/DOMAIN_CUTOVER.md`).
 App directory on the server: `/home/deploy/app` (owned by `deploy`). No secrets in this file; they live only in the server's `/home/deploy/app/.env` (chmod 600).
 
 ## How it's set up
@@ -57,7 +57,7 @@ ssh deploy@45.76.57.234
 cd ~/app
 sudo docker compose up -d --build      # rebuilds the api image and replaces only what changed
 sudo docker compose ps                 # api should become "healthy" within ~30 s
-curl -s https://45-76-57-234.sslip.io/health
+curl -s https://thefloodfather.surf/health
 ```
 
 ## Restart
@@ -125,7 +125,7 @@ If you change the widget's `server-location` (default `us`) or turn on WebRTC fo
 
 ## If HTTPS ever fails
 
-`sudo docker compose logs caddy | grep -i -E "error|rate"`. sslip.io names get their own Let's Encrypt limits; if Let's Encrypt refuses, Caddy automatically tries ZeroSSL. Long-term fix: a real domain with an A record pointing at `45.76.57.234`, then set `DOMAIN=` in `.env` and `sudo docker compose up -d --force-recreate caddy`.
+`sudo docker compose logs caddy | grep -i -E "error|rate|challenge"`. The usual cause is DNS: the domain's A record must point at `45.76.57.234`, with no other A/AAAA/ALIAS records for the same name. If Let's Encrypt refuses, Caddy automatically tries ZeroSSL. Changing the name: `docs/DOMAIN_CUTOVER.md`.
 
 ## Locked out?
 
