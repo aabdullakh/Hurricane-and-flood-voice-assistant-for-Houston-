@@ -27,9 +27,11 @@
 # This script never prints secrets and never copies .env.
 set -Eeuo pipefail
 
-HOST="deploy@45.76.57.234"
+HOST="${DEPLOY_HOST:-deploy@45.76.57.234}"   # SSH target: the server itself (its IP does not change with the domain)
 APP_DIR="app"                       # relative to deploy's home: ~/app
-DOMAIN="45-76-57-234.sslip.io"
+# Public site used for the HTTPS checks at the end. Must match DOMAIN in the server's ~/app/.env.
+# Before DNS + certificate for the new name are live: DEPLOY_DOMAIN=45-76-57-234.sslip.io bash scripts/deploy.sh
+DOMAIN="${DEPLOY_DOMAIN:-thefloodfather.surf}"
 BASE="https://$DOMAIN"
 DRY_RUN=0; API=0
 for arg in "$@"; do
