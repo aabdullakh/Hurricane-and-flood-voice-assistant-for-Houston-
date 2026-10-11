@@ -52,7 +52,7 @@ Briefly recap the key step (for example, the shelter name) and remind them: "If 
 ---
 
 ## First messages (configure per language in the dashboard)
-- **English:** "Hi, I'm the flood help line assistant. I can tell you what's happening with water near you and where help is. How can I help?"
-- **Spanish:** "Hola, soy el asistente de ayuda por inundaciones. Puedo decirle cómo está el agua cerca de usted y dónde encontrar ayuda. ¿En qué puedo ayudarle?"
+- **English:** "Hi, I'm Flood Father, the flood help line assistant. I can tell you what's happening with water near you and where help is. How can I help?"
+- **Spanish:** "Hola, soy Flood Father, el asistente de ayuda por inundaciones. Puedo decirle cómo está el agua cerca de usted y dónde encontrar ayuda. ¿En qué puedo ayudarle?"
 
 Have a native speaker review every non-English prompt and first message before the demo.

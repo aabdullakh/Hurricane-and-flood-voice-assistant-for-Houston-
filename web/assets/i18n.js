@@ -5,13 +5,13 @@
   const plural = (n, one, many) => (n === 1 ? one : many);
 
   const en = {
-    page_title: "Houston Flood Watch: live flood conditions and voice help",
+    page_title: "Flood Father: Live Houston flood help by voice",
     skip: "Skip to main content",
     emergency_region: "Emergency",
     danger_text: "In danger? Call 911.",
     call_911: "Call 911",
-    brand_home: "Houston Flood Watch, home",
-    brand_tag: "Live gauges, weather alerts and voice help",
+    brand_home: "Flood Father, home",
+    brand_tag: "Live Houston flood help by voice",
     language: "Language",
     status_question: "Is Houston flooding right now?",
     status_loading: "Checking live data…",
@@ -190,13 +190,13 @@
   };
 
   const es = {
-    page_title: "Vigilancia de Inundaciones de Houston: condiciones en vivo y ayuda por voz",
+    page_title: "Flood Father: ayuda por voz para inundaciones en Houston",
     skip: "Ir al contenido principal",
     emergency_region: "Emergencia",
     danger_text: "¿En peligro? Llame al 911.",
     call_911: "Llamar al 911",
-    brand_home: "Vigilancia de Inundaciones de Houston, inicio",
-    brand_tag: "Medidores en vivo, alertas del tiempo y ayuda por voz",
+    brand_home: "Flood Father, inicio",
+    brand_tag: "Ayuda por voz en vivo para inundaciones en Houston",
     language: "Idioma",
     status_question: "¿Hay inundaciones en Houston ahora?",
     status_loading: "Revisando los datos en vivo…",

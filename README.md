@@ -1,4 +1,6 @@
-# Houston Flood & Hurricane Voice Assistant
+# Flood Father
+
+**Live Houston flood help by voice.**
 
 A phone-first, multilingual voice assistant for Houston residents. The caller talks to an **ElevenLabs voice agent** (Gemini as its brain). The agent calls this **backend** to get nearby gauge readings and weather alerts, shelters, and a consented household profile, then explains it in plain words.
 
