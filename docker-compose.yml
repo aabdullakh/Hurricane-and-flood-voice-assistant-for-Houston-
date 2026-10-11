@@ -12,6 +12,7 @@ services:
       POSTGRES_DB: orion
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks: [backend]
     security_opt:
       - no-new-privileges:true
     healthcheck:
@@ -28,11 +29,18 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://orion:${POSTGRES_PASSWORD}@db:5432/orion
+      # Trust X-Forwarded-For ONLY from Caddy's fixed address below, so per-IP rate limits see the real client.
+      FORWARDED_ALLOW_IPS: 172.31.250.10
+    networks: [backend]
     depends_on:
       db:
         condition: service_healthy
     # No "ports:" on purpose. Runs as the non-root "app" user (see api/Dockerfile).
     user: "10001:10001"
+    volumes:
+      # Dashboard files served live from the server's ~/app/web (read-only), so scripts/deploy.sh can update
+      # them without a rebuild or restart. Files there must be world-readable (644) for uid 10001.
+      - ./web:/srv/web:ro
     read_only: true
     tmpfs:
       - /tmp
@@ -54,6 +62,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    networks:
+      backend:
+        ipv4_address: 172.31.250.10  # the only address the api trusts for X-Forwarded-For
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -69,6 +80,12 @@ services:
       - no-new-privileges:true
     depends_on:
       - api
+
+networks:
+  backend:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
 
 volumes:
   pgdata:

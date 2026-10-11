@@ -83,6 +83,14 @@ async def _alerts(client: httpx.AsyncClient, lat: float, lon: float, replay_aler
         return [], False
 
 
+def _with_state(view: dict) -> dict:
+    return {**view, "state": risk.gauge_state(view)}
+
+
+def _alert_view(a: dict) -> dict:
+    return {**{k: a.get(k) for k in ("event", "severity", "headline", "area", "expires")}, "level": risk.alert_level(a.get("event"))}
+
+
 # ---------- the main answer ----------
 async def build_status(session: Session, client: httpx.AsyncClient, lat: float, lon: float) -> dict:
     series, replay_alerts, now, synthetic, replay_name = current_data(session)
@@ -92,7 +100,7 @@ async def build_status(session: Session, client: httpx.AsyncClient, lat: float, 
     nearest_miles = closest[0][1] if closest else None
     # Gauges beyond the limit say nothing about this spot: leave them out, but report how far the nearest one is.
     near = [(s, miles) for s, miles in closest if miles <= settings.gauge_max_miles]
-    views = [gauge_view(s, now, miles) for s, miles in near]
+    views = [_with_state(gauge_view(s, now, miles)) for s, miles in near]
     assessment = risk.assess(views, alerts, alerts_ok, nearest_miles)
 
     as_of = None
@@ -109,7 +117,7 @@ async def build_status(session: Session, client: httpx.AsyncClient, lat: float, 
         "data_as_of": None if as_of is None else as_of.isoformat(),
         "nearest_gauges": views,
         "nearest_gauge_miles": None if nearest_miles is None else round(nearest_miles, 1),
-        "alerts": [{k: a.get(k) for k in ("event", "severity", "headline", "area", "expires")} for a in alerts[:5]],
+        "alerts": [_alert_view(a) for a in alerts[:5]],
         "alerts_available": alerts_ok,
         "sources": ["USGS gauge readings", "National Weather Service alerts"] if replay_name is None else ["Replay data"],
         "disclaimer": risk.DISCLAIMER,
@@ -144,7 +152,7 @@ async def overview(session: Session, client: httpx.AsyncClient) -> dict:
     """Everything the dashboard needs in one call. Public data only."""
     series, replay_alerts, now, synthetic, replay_name = current_data(session)
     alerts, alerts_ok = await _alerts(client, settings.houston_lat, settings.houston_lon, replay_alerts)
-    gauges = [gauge_view(s, now) for s in series if s.readings]
+    gauges = [_with_state(gauge_view(s, now)) for s in series if s.readings]
     return {
         "mode": STATE.mode,
         "replay": None if replay_name is None else {"name": replay_name, "synthetic": synthetic, "frame": STATE.replay_index},
@@ -152,7 +160,9 @@ async def overview(session: Session, client: httpx.AsyncClient) -> dict:
         "last_poll": None if STATE.last_poll is None else STATE.last_poll.isoformat(),
         "last_poll_error": STATE.last_poll_error,
         "alerts_available": alerts_ok,
-        "alerts": [{k: a.get(k) for k in ("event", "severity", "headline", "area", "expires")} for a in alerts[:10]],
+        "alerts": [_alert_view(a) for a in alerts[:10]],
+        "alerts_area": "central Houston",
         "gauges": gauges,
+        "thresholds": risk.thresholds(),
         "disclaimer": risk.DISCLAIMER,
     }

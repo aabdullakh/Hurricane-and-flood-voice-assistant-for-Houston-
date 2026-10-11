@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import httpx
 import pytest
@@ -137,7 +138,7 @@ def test_zip_not_found_anywhere_returns_none_and_is_not_cached():
 
     result, _ = _geocode_with("00000", handler)
     assert result is None
-    assert "00000" not in geo._zip_cache
+    assert geo._zip_cache == {}
 
 
 def test_street_address_with_zip_still_uses_census():
@@ -313,3 +314,23 @@ def test_unknown_bayou_with_no_gauge_falls_through_to_census_and_nominatim():
     result, calls = _geocode_gauges("Sims Bayou", handler)  # no Sims gauge in this fixture list
     assert result is None
     assert [c.url.host for c in calls] == ["geocoding.geo.census.gov", "nominatim.openstreetmap.org"]
+
+
+def test_caches_never_hold_the_searched_text():
+    async def run():
+        def handler(request):
+            if request.url.host == "api.zippopotam.us":
+                return httpx.Response(200, json=ZIPPO_77002)
+            if request.url.host == "geocoding.geo.census.gov":
+                return httpx.Response(200, json=NO_CENSUS_MATCH)
+            return httpx.Response(200, json=NOMINATIM_ASTRODOME)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await geo.geocode(client, "77002")
+            await geo.geocode(client, "Astrodome")
+
+    asyncio.run(run())
+    keys = list(geo._zip_cache) + list(geo._search_cache)
+    assert len(keys) == 2
+    assert all(re.fullmatch(r"[0-9a-f]{64}", k) for k in keys)  # SHA-256 hashes only
+    assert not {"77002", "astrodome", "Astrodome"} & set(keys)

@@ -73,20 +73,21 @@ Returns `found`, `risk` (`low` / `elevated` / `high` / `unknown`), `reasons`, `c
 | Field | Value |
 |---|---|
 | Name | `get_shelters` |
-| Description | Find the nearest shelters or help locations. Call only after get_flood_status has returned a location, and pass its location.lat and location.lon. If the list is empty, tell the caller to check official Harris County or City of Houston sources or call 211. |
+| Description | Find the nearest shelters that FEMA lists as open. Pass the caller's location (ZIP code, city, address or landmark), or lat and lon from get_flood_status. Read at most two, say they are FEMA's list and that distances are in a straight line, and tell the caller to confirm a shelter is open before going. If the list is empty or unavailable, read the message and tell the caller to call 211. |
 | Method | `GET` |
 | URL | `https://expand-stripes-satisfy-everybody.trycloudflare.com/shelters` |
 | Headers | `X-API-Key: YOUR_KEY` |
 
-**Query parameters**
+**Query parameters** (give `location`, or both `lat` and `lon`)
 
 | Identifier | Type | Required | Value type | Description / value |
 |---|---|---|---|---|
-| `lat` | number | yes | LLM prompt | Latitude, copied exactly from `location.lat` in the last get_flood_status result. |
-| `lon` | number | yes | LLM prompt | Longitude, copied exactly from `location.lon` in the last get_flood_status result. |
-| `limit` | integer | no | Constant | `2` |
+| `location` | string | no | LLM prompt | The caller's ZIP code, city, street address or landmark, as they said it. Max 200 characters. |
+| `lat` | number | no | LLM prompt | Latitude, copied exactly from `location.lat` in the last get_flood_status result. Only together with `lon`. |
+| `lon` | number | no | LLM prompt | Longitude, copied exactly from `location.lon` in the last get_flood_status result. Only together with `lat`. |
+| `limit` | integer | no | Constant | `3` (the maximum) |
 
-Note: `data/shelters.json` is empty until it is filled from official sources, so this tool returns an empty list for now.
+Returns `count`, `shelters` (each: `name`, `address`, `distance_miles`, `source`), `available` (false if FEMA can't be reached), `checked_at`, and a `message` to read: "FEMA lists no open shelters near you right now. Call 211." when there are none.
 
 ## 4. `save_profile`
 

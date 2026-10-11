@@ -3,109 +3,175 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Houston Flood Watch Dashboard</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-  :root { --bg:#fff; --fg:#17202a; --mut:#5d6b7a; --bd:#d6dde5; --card:#f5f7fa; --warn:#b42318; --warnbg:#fee4e2; --ok:#1f5fbf; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6edf3; --mut:#9aa4b0; --bd:#30363d; --card:#161b22; --warn:#ffb4ab; --warnbg:#4a1511; --ok:#7db1ff; } }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  header { padding:14px 16px; border-bottom:1px solid var(--bd); display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; }
-  h1 { font-size:1.15rem; margin:0; }
-  .meta { color:var(--mut); font-size:.85rem; }
-  #banner { display:none; padding:10px 16px; background:var(--warnbg); color:var(--warn); font-weight:600; }
-  main { display:grid; grid-template-columns: 1fr 380px; gap:0; min-height:calc(100vh - 110px); }
-  #map { min-height:420px; }
-  aside { padding:12px 16px; border-left:1px solid var(--bd); overflow:auto; }
-  h2 { font-size:.95rem; margin:14px 0 6px; text-transform:uppercase; letter-spacing:.04em; color:var(--mut); }
-  .card { background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:8px 10px; margin:6px 0; font-size:.9rem; }
-  .card b { display:block; }
-  table { width:100%; border-collapse:collapse; font-size:.85rem; }
-  td, th { text-align:left; padding:4px 6px; border-bottom:1px solid var(--bd); }
-  .legend { font-size:.8rem; color:var(--mut); margin-top:8px; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
-  footer { padding:10px 16px; color:var(--mut); font-size:.8rem; border-top:1px solid var(--bd); }
-  @media (max-width: 800px) { main { grid-template-columns: 1fr; } aside { border-left:0; border-top:1px solid var(--bd); } }
-</style>
+<title>Houston Flood Watch: live flood conditions and voice help</title>
+<meta name="description" content="Is Houston flooding right now? Live stream gauges and National Weather Service alerts, a map you can tap, official shelter information, and a voice assistant in English and Spanish.">
+<meta name="theme-color" content="#14232B">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/vendor/fontsource-5.3.0/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/vendor/fontsource-5.3.0/public-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css">
+<script src="/assets/i18n.js" defer></script>
+<script src="/assets/app.js" defer></script>
 </head>
 <body>
-<header>
-  <h1>Houston Flood Watch</h1>
-  <span class="meta" id="status">loading…</span>
+<a class="skip-link" href="#main" data-i18n="skip">Skip to main content</a>
+
+<!-- Always visible, never covered: the one instruction that matters most. -->
+<div class="danger-strip" role="region" aria-label="Emergency" data-i18n-aria="emergency_region">
+  <p><span class="danger-icon" aria-hidden="true">!</span><span data-i18n="danger_text">In danger? Call 911.</span></p>
+  <a class="btn-911" href="tel:911" data-i18n="call_911">Call 911</a>
+</div>
+
+<header class="site-header">
+  <a class="brand" href="/" aria-label="Houston Flood Watch, home" data-i18n-aria="brand_home">
+    <span class="brand-sign"><span class="brand-name">Houston Flood Watch</span></span>
+    <span class="brand-tag" data-i18n="brand_tag">Live gauges, weather alerts and voice help</span>
+  </a>
+  <div class="lang" role="group" aria-label="Language" data-i18n-aria="language">
+    <button type="button" class="lang-btn" data-lang="en" aria-pressed="true" lang="en" aria-label="English"><span class="long">English</span><span class="short" aria-hidden="true">EN</span></button>
+    <button type="button" class="lang-btn" data-lang="es" aria-pressed="false" lang="es" aria-label="Español"><span class="long">Español</span><span class="short" aria-hidden="true">ES</span></button>
+  </div>
 </header>
-<div id="banner" role="status"></div>
-<main>
-  <div id="map" aria-label="Map of stream gauges"></div>
-  <aside>
-    <h2>Active alerts</h2>
-    <div id="alerts"><div class="card">None loaded yet.</div></div>
-    <h2>Gauges</h2>
-    <table><thead><tr><th>Gauge</th><th>Level</th><th>Trend</th><th>Age</th></tr></thead><tbody id="rows"></tbody></table>
-    <div class="legend">
-      <span class="dot" style="background:#d92d20"></span>rising fast (≥1.5 ft/hr)
-      <span class="dot" style="background:#f79009"></span>rising (≥0.5 ft/hr)
-      <span class="dot" style="background:#1f5fbf"></span>no fast rise
-      <span class="dot" style="background:#98a2b3"></span>stale (&gt;3 h)
-      <br>Colors show rate of change only. They do not mean an area is safe.
+
+<div id="replay-banner" class="replay-banner" role="alert" hidden></div>
+
+<main id="main">
+  <div class="top-grid">
+    <!-- 1. The answer, computed from live data -->
+    <section class="status" id="status" aria-labelledby="status-headline" data-level="loading">
+      <p class="status-q" data-i18n="status_question">Is Houston flooding right now?</p>
+      <h1 id="status-headline" class="status-headline" aria-live="polite" data-i18n="status_loading">Checking live data…</h1>
+      <p id="status-detail" class="status-detail"></p>
+      <ul id="status-facts" class="status-facts" aria-label="Current readings" data-i18n-aria="facts_label"></ul>
+      <div id="status-alerts" class="status-alerts"></div>
+      <p class="status-source" id="status-source"></p>
+    </section>
+
+    <!-- 2. Talk to the assistant -->
+    <section class="talk" id="talk" aria-labelledby="talk-title">
+      <h2 id="talk-title" class="talk-title" data-i18n="talk_title">Ask the flood assistant</h2>
+      <p class="talk-lead" data-i18n="talk_lead">Talk with a voice assistant in English or Spanish. It checks live gauges and alerts for the place you name.</p>
+      <p class="mic-note"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg><span data-i18n="mic_note">Allow your microphone. Use headphones.</span></p>
+      <button type="button" class="btn btn-primary btn-talk" id="talk-start">
+        <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2Z"/></svg>
+        <span data-i18n="talk_start">Start talking</span>
+      </button>
+      <p class="talk-status" id="talk-status" role="status" aria-live="polite"></p>
+      <h3 class="examples-title" data-i18n="examples_title">Try asking</h3>
+      <ul class="examples" id="examples"></ul>
+      <p class="talk-other-lang" id="talk-other-lang" data-i18n="other_lang">También puede hablar en español.</p>
+      <p class="talk-privacy"><span data-i18n="privacy_short">Calls are processed by ElevenLabs and may be recorded and stored.</span> <a href="#privacy" data-i18n="privacy_more">About privacy</a></p>
+    </section>
+  </div>
+
+  <!-- 3. Map -->
+  <section class="map-section" id="map-section" aria-labelledby="map-title">
+    <div class="section-head">
+      <h2 id="map-title" data-i18n="map_title">Stream gauges and conditions near you</h2>
+      <p data-i18n="map_help">Tap a gauge to see its reading. Tap anywhere else on the map, or search, to check that spot.</p>
     </div>
-  </aside>
+    <form class="search" id="search" role="search">
+      <label for="search-input" data-i18n="search_label">Check an address, ZIP code or place in the Houston area</label>
+      <div class="search-row">
+        <input id="search-input" name="q" type="search" autocomplete="street-address" inputmode="search" maxlength="200" required
+               placeholder="901 Bagby St, 77002, or Buffalo Bayou" data-i18n-placeholder="search_placeholder">
+        <button type="submit" class="btn btn-secondary" data-i18n="search_button">Check this place</button>
+      </div>
+      <p class="search-note" data-i18n="search_note">Your search is sent to our server and the US Census address service to find the spot. We don't store it.</p>
+    </form>
+    <div class="map-layout">
+      <div class="map-frame">
+        <div id="map" class="map" role="region" aria-label="Map of stream gauges in the Houston area" data-i18n-aria="map_label">
+          <p class="map-placeholder" id="map-placeholder" data-i18n="map_loading">Loading the map…</p>
+        </div>
+        <ul class="legend" id="legend" aria-label="Map key" data-i18n-aria="legend_label"></ul>
+      </div>
+      <aside class="detail" id="detail" aria-live="polite" aria-labelledby="detail-title">
+        <h3 id="detail-title" class="detail-empty-title" data-i18n="detail_empty_title">Pick a gauge or a spot</h3>
+        <p data-i18n="detail_empty">The reading or the conditions for that place will show here.</p>
+      </aside>
+    </div>
+    <details class="gauge-list">
+      <summary data-i18n="gauge_list_summary">All gauges as a list</summary>
+      <div class="table-wrap"><table>
+        <caption class="visually-hidden" data-i18n="gauge_list_caption">Stream gauges, rising first</caption>
+        <thead><tr>
+          <th scope="col" data-i18n="col_gauge">Gauge</th><th scope="col" data-i18n="col_state">Status</th>
+          <th scope="col" data-i18n="col_level">Water level</th><th scope="col" data-i18n="col_trend">Change per hour</th><th scope="col" data-i18n="col_age">Reading age</th>
+        </tr></thead>
+        <tbody id="gauge-rows"></tbody>
+      </table></div>
+    </details>
+  </section>
+
+  <!-- 4. Shelters -->
+  <section class="shelters" id="shelters" aria-labelledby="shelters-title">
+    <div class="section-head">
+      <h2 id="shelters-title" data-i18n="shelters_title">Shelters</h2>
+      <p data-i18n="shelters_lead">Open shelters from FEMA's official list, with the time we checked it.</p>
+    </div>
+    <div id="shelter-list" class="shelter-list"><p data-i18n="loading">Loading…</p></div>
+  </section>
+
+  <!-- 5. How this works -->
+  <section class="how" id="how" aria-labelledby="how-title">
+    <h2 id="how-title" data-i18n="how_title">How this works</h2>
+    <div class="how-grid">
+      <div>
+        <h3 data-i18n="how_data_title">Where the data comes from</h3>
+        <ul class="sources">
+          <li><b>USGS</b> <span data-i18n="src_usgs">stream gauges in Harris County: water level, read about every 15 minutes and sent about every hour, so readings can lag.</span></li>
+          <li><b>National Weather Service</b> <span data-i18n="src_nws">active alerts, such as flood watches and warnings.</span></li>
+          <li><b>US Census</b> <span data-i18n="src_census">address lookup. ZIP codes and place names may use Zippopotam.us or OpenStreetMap Nominatim.</span></li>
+          <li><b>Open-Meteo</b> <span data-i18n="src_openmeteo">rain estimates from a weather model, not a rain gauge.</span></li>
+          <li><b>OpenStreetMap</b> <span data-i18n="src_osm">map images, loaded through our server.</span></li>
+          <li><b>FEMA</b> <span data-i18n="src_fema">shelters reported open through FEMA's National Shelter System.</span></li>
+          <li><b>ElevenLabs</b> <span data-i18n="src_elevenlabs">the voice assistant, which uses the same live data.</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3 data-i18n="how_limits_title">What it can't do</h3>
+        <ul class="limits">
+          <li data-i18n="limit_prototype">This is a prototype built for a hackathon. It is not an official warning service.</li>
+          <li data-i18n="limit_heuristic">Risk comes from official alerts and how fast gauges are rising. We don't have official flood levels for each gauge.</li>
+          <li data-i18n="limit_gauge">A gauge measures water at the gauge, not on your street. A spot more than 10 miles from a gauge shows as unknown.</li>
+          <li data-i18n="limit_never_safe">It never tells you a place is safe. Never drive through water: turn around, don't drown.</li>
+        </ul>
+        <p class="official" data-i18n-html="official_links">For official information: <a href="https://www.readyharris.org/">ReadyHarris</a>, <a href="https://houstonoem.org/">Houston Office of Emergency Management</a>, <a href="https://www.harriscountyfws.org/">Harris County Flood Warning System</a>, <a href="https://www.weather.gov/hgx/">National Weather Service Houston</a>, or call <a href="tel:211">211</a>.</p>
+      </div>
+      <div id="privacy">
+        <h3 data-i18n="privacy_title">Privacy</h3>
+        <ul class="privacy">
+          <li data-i18n="privacy_1">Voice calls are processed by ElevenLabs. Your conversation may be recorded and stored by ElevenLabs.</li>
+          <li data-i18n="privacy_2">Don't share personal information (like your full home address or phone number) unless you need to.</li>
+          <li data-i18n="privacy_3">Our own server does not store call audio or full transcripts. If you say yes when the assistant asks, it saves a few household details (like your first name, language and needs) to help next time. Ask it to forget you at any time. We may keep a short summary of what a call was about.</li>
+          <li data-i18n="privacy_4">Map points you check are rounded to about 1 km before they reach our server. Our server keeps short technical logs (such as IP address and time) that are deleted automatically.</li>
+          <li data-i18n="privacy_5">This website sets no cookies and has no ads, analytics or tracking. The voice assistant may save small settings in your browser, such as your language.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
 </main>
-<footer id="disclaimer"></footer>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-  // Everything that comes from the API is inserted with textContent (never innerHTML) so external data cannot inject markup.
-  const map = L.map('map').setView([29.76, -95.37], 10);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
-  const layer = L.layerGroup().addTo(map);
+<footer class="site-footer">
+  <p data-i18n="footer_disclaimer">Prototype decision support, not official guidance. Data may be delayed or incomplete. In immediate danger, call 911.</p>
+  <p data-i18n="footer_made">Made for the CodeRED Orion hackathon, Houston.</p>
+</footer>
 
-  const colorFor = (g) => {
-    if (g.age_minutes > 180) return '#98a2b3';
-    const t = g.trend_ft_per_hr;
-    if (t !== null && t >= 1.5) return '#d92d20';
-    if (t !== null && t >= 0.5) return '#f79009';
-    return '#1f5fbf';
-  };
-  const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
-  const fmtAge = (m) => (m < 90 ? m + ' min' : (m / 60).toFixed(1) + ' h');
-  const fmtTrend = (t) => (t === null ? 'n/a' : (t > 0 ? '+' : '') + t.toFixed(1) + ' ft/hr');
+<!-- Small "Talk" button that follows you when the talk panel is scrolled out of view. -->
+<button type="button" class="talk-fab" id="talk-fab" hidden>
+  <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
+  <span data-i18n="fab_talk">Talk to the assistant</span>
+</button>
 
-  async function refresh() {
-    try {
-      const r = await fetch('/overview', { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const d = await r.json();
+<noscript><p class="noscript">This page needs JavaScript to show live data. In danger, call 911. Official information: readyharris.org, or call 211. · Esta página necesita JavaScript. Si está en peligro, llame al 911.</p></noscript>
 
-      const banner = document.getElementById('banner');
-      if (d.replay) {
-        banner.style.display = 'block';
-        banner.textContent = 'REPLAY: ' + (d.replay.synthetic ? 'synthetic test data. ' : 'recorded data. ') + 'Not live conditions. Frame ' + d.replay.frame + '.';
-      } else { banner.style.display = 'none'; }
-
-      document.getElementById('status').textContent =
-        (d.mode === 'replay' ? 'Replay mode' : 'Live') + ' · ' + d.gauges.length + ' gauges · data time ' + new Date(d.now).toLocaleTimeString() +
-        (d.last_poll_error ? ' · last poll error' : '');
-
-      const alerts = document.getElementById('alerts'); alerts.replaceChildren();
-      if (!d.alerts_available) alerts.append(el('div', 'Weather alert service unavailable right now.', 'card'));
-      else if (!d.alerts.length) alerts.append(el('div', 'No active alerts for central Houston.', 'card'));
-      d.alerts.forEach(a => { const c = el('div', undefined, 'card'); c.append(el('b', a.event || 'Alert'), el('span', a.headline || a.area || '')); alerts.append(c); });
-
-      layer.clearLayers();
-      const rows = document.getElementById('rows'); rows.replaceChildren();
-      d.gauges.sort((a, b) => (b.trend_ft_per_hr ?? -99) - (a.trend_ft_per_hr ?? -99)).forEach(g => {
-        L.circleMarker([g.lat, g.lon], { radius: 9, color: colorFor(g), fillColor: colorFor(g), fillOpacity: .7 })
-          .bindTooltip(g.name + ': ' + g.level_ft + ' ft, ' + fmtTrend(g.trend_ft_per_hr) + ', ' + fmtAge(g.age_minutes) + ' old').addTo(layer);
-        const tr = document.createElement('tr');
-        [g.name, g.level_ft + ' ft', fmtTrend(g.trend_ft_per_hr), fmtAge(g.age_minutes)].forEach(t => tr.append(el('td', t)));
-        rows.append(tr);
-      });
-      document.getElementById('disclaimer').textContent = d.disclaimer;
-    } catch (e) {
-      document.getElementById('status').textContent = 'Could not reach the server (' + e.message + '). Retrying…';
-    }
-  }
-  refresh(); setInterval(refresh, 30000);
-</script>
+<!-- ElevenLabs voice agent. The agent ID is public by design; there is no key or secret in this page.
+     The widget script (pinned 0.19.0 + integrity hash) is loaded by app.js shortly after the page, so it never
+     slows the first view. Its audio processors are served from this site (web/vendor/). -->
+<elevenlabs-convai agent-id="agent_6801m4kgmq54fg98tmgg41n7n14v" placement="bottom-right" variant="compact" allow-events="true"
+                  worklet-path-raw-audio-processor="/vendor/elevenlabs-convai-0.19.0/raw-audio-processor.js"
+                  worklet-path-audio-concat-processor="/vendor/elevenlabs-convai-0.19.0/audio-concat-processor.js"></elevenlabs-convai>
 </body>
 </html>

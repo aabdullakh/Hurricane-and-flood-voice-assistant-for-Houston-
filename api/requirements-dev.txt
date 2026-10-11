@@ -1,2 +1,3 @@
 -r requirements.txt
 pytest==9.1.1
+PyYAML==6.0.3  # tests read docker-compose.yml (test_proxy_ip.py)
